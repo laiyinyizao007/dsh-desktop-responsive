@@ -29,13 +29,16 @@
  * silently. This plugin therefore binds only to the anchors listed in
  * `ANCHORS`, and every anchor is one of two kinds:
  *
- *   - `marker` — a `data-dsh-region` attribute this repository adds to
- *     upstream through a minimal patch. The patch only adds an attribute;
- *     it never restructures upstream's render tree.
+ *   - `marker` — a `data-dsh-region` attribute. A host that builds
+ *     upstream from source can add one with a minimal patch — the ones
+ *     this plugin knows about are in `patches/` — and the plugin adds the
+ *     ones it can work out for itself, so that a host with the patches
+ *     and a host without them behave the same. A patch only adds an
+ *     attribute; it never restructures upstream's render tree.
  *   - `attribute` — a stable data attribute upstream already ships
  *     (`data-conversation-content`, `data-width-handle`, …).
  *
- * `ANCHORS` is the whole upstream contract. `test/responsive-layout.test.mjs`
+ * `ANCHORS` is the whole upstream contract. `test/responsive-layout-contract.test.mjs`
  * fails when an anchor disappears from its package, when a patch stops
  * carrying its marker, or when the plugin selects on anything that is not in
  * the manifest. That is what keeps an upstream upgrade cheap: the cost of a
@@ -2315,7 +2318,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * menus share that surface. The model menu is the one upstream names
        * "model and reasoning effort"; the plugin keeps that name in step
        * with upstream's dictionary, and
-       * `test/responsive-layout.test.mjs` fails when the two drift apart.
+       * `test/responsive-layout-contract.test.mjs` fails when the two drift
+       * apart.
        */
       function modelMenu() {
         const name = state.t('modelMenu.aria')

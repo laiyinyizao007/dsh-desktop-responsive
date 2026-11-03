@@ -114,7 +114,7 @@ The entry is injected into the menu while that menu is open. Upstream
 renders the menu into a portal on the body, and several menus share that
 surface, so the plugin picks the model menu out by the name upstream gives
 it. The plugin keeps that name in its own dictionary, and
-`test/responsive-layout.test.mjs` fails when the two drift apart: a renamed
+`test/responsive-layout-contract.test.mjs` fails when the two drift apart: a renamed
 menu would otherwise leave the phone without an entry at all.
 
 The sheet sits at z-index 1200, above upstream's portals: the context
@@ -367,6 +367,7 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 
 | Anchor | Selector | Origin | Upstream package |
 | --- | --- | --- | --- |
+| `sidebarRoot` | `[data-dsh-sidebar-root]` | upstream attribute | `dsh-client-ui-sidebar` |
 | `frame` | `[data-dsh-region="layout"]` | marker | `dsh-client-ui-layout` |
 | `sidebar` | `[data-dsh-region="sidebar"]` | marker | `dsh-client-ui-layout` |
 | `center` | `[data-dsh-region="center"]` | marker | `dsh-client-ui-layout` |
@@ -375,6 +376,7 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `sidebarCollapsed` | `[data-sidebar-collapsed]` | upstream attribute | `dsh-client-ui-layout` |
 | `sidebarToggle` | `[data-dsh-region="sidebar-toggle"]` | marker | `dsh-client-ui-sidebar` |
 | `conversationContent` | `[data-conversation-content]` | upstream attribute | `dsh-client-ui-conversation` |
+| `chatRegion` | `[data-conversation-region="chat"]` | upstream attribute | `dsh-client-ui-conversation` |
 | `modelMenu` | `[data-menu-material="translucent"]` | upstream attribute | `dsh-client-ui-primitives` |
 | `table` | `table` | semantic element | `dsh-client-ui-primitives` |
 | `composerRegion` | `[data-conversation-region="composer"]` | upstream attribute | `dsh-client-ui-conversation` |
@@ -384,6 +386,7 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `conversationWidthHandle` | `[data-width-handle]` | upstream attribute | `dsh-client-ui-conversation` |
 | `workspaceRow` | `[data-dsh-region="conversation-workspace-row"]` | marker | `dsh-client-ui-conversation` |
 | `chatUserStack` | `[data-dsh-region="chat-user-stack"]` | marker | `dsh-client-ui-chat` |
+| `actionsReveal` | `[data-actions-reveal="hover"]` | upstream attribute | `dsh-client-ui-chat` |
 | `conversationHeader` | `[data-dsh-region="conversation-header"]` | marker | `dsh-client-ui-conversation` |
 | `conversationTabs` | `[data-dsh-region="conversation-tabs"]` | marker | `dsh-client-ui-conversation` |
 | `composerDock` | `[data-dsh-region="composer-dock"]` | marker | `dsh-client-ui-conversation` |
@@ -396,11 +399,14 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `settingsOptions` | `[data-dsh-region="settings-options"]` | marker | `dsh-client-ui-settings-general` |
 | `settingsFooter` | `[data-dsh-settings-sidebar-footer]` | upstream attribute | `dsh-client-ui-settings-general` |
 
-A *marker* anchor is a `data-dsh-region` attribute this repository adds to
-upstream through a minimal patch. The patch only adds an attribute; it never
-restructures upstream's render tree.
+A *marker* anchor is a `data-dsh-region` attribute. A host that builds
+upstream from source can add one with a minimal patch — the ones this
+plugin knows about are in `patches/` — and the plugin adds the ones it can
+work out for itself: it finds the frame by the grid it owns, and the
+sidebar's and the centre's columns by what they hold. A patch only adds an
+attribute; it never restructures upstream's render tree.
 
-`test/responsive-layout.test.mjs` guards the manifest: it fails when an
+`test/responsive-layout-contract.test.mjs` guards the manifest: it fails when an
 anchor disappears from its package, when a patch stops carrying its marker,
 when the plugin selects on anything that is not in the manifest, when the
 plugin relies on upstream's DOM *structure* (`:first-child` and friends), and
@@ -415,7 +421,7 @@ The plugin is written so that a new Harness release does not become a chase:
 - **The build never breaks.** `patch-package` applies a patch whose file name
   carries another version, and it only warns. A patch whose context no
   longer matches is skipped with an error — and the install still succeeds.
-  The desktop keeps booting; the affected surface degrades.
+  The host keeps booting; the affected surface degrades.
 - **The breakage is named, not silent.** The plugin audits its anchors at
   runtime and logs which ones upstream no longer provides, on the console and
   on `data-dshr-missing`. It also checks the *symptom*: if the conversation
