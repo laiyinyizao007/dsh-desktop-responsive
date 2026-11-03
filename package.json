@@ -30,12 +30,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/dsh-desktop-responsive.git"
+    "url": "git+https://github.com/laiyinyizao007/dsh-desktop-responsive.git"
   },
   "bugs": {
-    "url": "https://github.com/OWNER/dsh-desktop-responsive/issues"
+    "url": "https://github.com/laiyinyizao007/dsh-desktop-responsive/issues"
   },
-  "homepage": "https://github.com/OWNER/dsh-desktop-responsive#readme",
+  "homepage": "https://github.com/laiyinyizao007/dsh-desktop-responsive#readme",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -54,5 +54,6 @@
   "devDependencies": {
     "jsdom": "^26.0.0",
     "vitest": "^3.0.0"
-  }
+  },
+  "author": "laiyinyizao007"
 }
