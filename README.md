@@ -71,8 +71,14 @@ made the way it is, and what the upstream's contract is.
 ## Tests
 
 ```bash
+npm install --include=dev
 npm test
 ```
+
+The `--include=dev` is not ceremony: a machine with `NODE_ENV=production`
+set — which is what a server tends to have — makes npm skip the
+development dependencies, and the test runner is one of them. Without it
+the install says "up to date" and installs nothing.
 
 The tests are behaviour tests: they load the plugin into a DOM, and check
 what it does to the layout rather than what its source says. A guard fails
