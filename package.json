@@ -1,0 +1,58 @@
+{
+  "name": "dsh-desktop-responsive",
+  "version": "0.2.0",
+  "description": "A phone-width layout for the DSH Desktop and the DeepSeek Harness web UI: the expanded sidebar becomes a floating drawer, the settings dialog becomes a full-screen tab page, and the composer follows the keyboard.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "patches/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "desktop",
+    "mobile",
+    "responsive",
+    "phone",
+    "plugin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OWNER/dsh-desktop-responsive.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OWNER/dsh-desktop-responsive/issues"
+  },
+  "homepage": "https://github.com/OWNER/dsh-desktop-responsive#readme",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.0"
+  }
+}
