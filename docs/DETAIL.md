@@ -320,12 +320,23 @@ uncovers nothing that was meant to stay unseen.
 
 ## The room below the composer
 
-The header takes its height off the top of the conversation, so the composer
-leaves the same room below it. Without that the composer sits on the bottom
-edge of the screen and its lower half is cut off.
+None, beyond the screen's own safe area.
 
-The room is the header's own height, which the script publishes: with the
-view tabs open the header is taller, and the composer moves down with it.
+The composer sticks to the bottom of its scroll port, so whatever the frame
+leaves below that port is what stands between the composer and the floor of
+the screen. The frame used to leave the header's height there — the header
+takes its height off the top of the conversation, so the composer was given
+the same room below.
+
+That was the wrong measure. The frame is a grid whose rows fill it, so a
+padding on the frame shortens the content area, and the composer stops that
+much short of the bottom of the screen. On a phone that reads as the input
+box not having sunk to the bottom: the conversation runs to the edge and the
+composer floats a header's height above it.
+
+Only the safe area is left now — the home indicator or the gesture bar the
+screen itself draws over its own bottom edge. The composer reaches the
+floor everywhere else.
 
 ## Reading comfort
 

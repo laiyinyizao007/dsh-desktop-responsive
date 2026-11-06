@@ -1060,16 +1060,15 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
 }
 
 /* ── The space below the composer ─────────────────────────────────────────
-   The header takes its height off the top of the conversation, so the
-   composer leaves the same room below it. Without that the composer sits
-   on the bottom edge of the screen and its lower half is cut off.
-
-   The room is the header's own height, which the script publishes: with the
-   view tabs open the header is taller, and the composer moves down with
-   it. */
+   The composer sticks to the bottom of its scroll port, so the space it
+   needs below it is the space the screen's own safe area takes — a home
+   indicator, a gesture bar — rather than a copy of the header's height.
+   Giving the frame that height as padding shortens the content area and
+   lifts the composer off the floor, which is what a phone reads as "the
+   input box has not sunk to the bottom". The safe area alone is left. */
 :root[data-dshr-mode='phone'] ${A.frame} {
   box-sizing: border-box !important;
-  padding-bottom: max(var(--dsh-header-height, 44px), env(safe-area-inset-bottom)) !important;
+  padding-bottom: env(safe-area-inset-bottom) !important;
 }
 
 /* ── The collapsed rail ───────────────────────────────────────────────────
