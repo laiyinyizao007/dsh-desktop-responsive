@@ -1303,6 +1303,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         scrim: null,
         /** The menu button that opens the drawer. */
         menu: null,
+        /** Whether the rail's own tabindex has been put away. */
+        toggleTabIndexSaved: false,
+        /** The tabindex the rail's toggle had, '' when it had none. */
+        toggleTabIndex: '',
         /** The chevrons that fold the top and bottom rows back. */
         toggles: {},
         /** The entry that opens the usage sheet. */
@@ -1783,6 +1787,9 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           }
           const toggle = document.querySelector(A.sidebarToggle)
           if (toggle instanceof HTMLElement && document.activeElement !== toggle) {
+            // The drawer shows the rail, and with it the rail's own toggle.
+            // It comes back into the tree before it takes the focus.
+            standInForToggle(false)
             toggle.focus({ preventScroll: true })
           }
           return
@@ -2196,9 +2203,48 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (visible) {
           button.setAttribute('data-dshr-menu-visible', 'true')
           button.setAttribute('aria-label', state.t('menu.open'))
+          standInForToggle(true)
           return
         }
         button.removeAttribute('data-dshr-menu-visible')
+        standInForToggle(false)
+      }
+
+      /**
+       * Keep one control for the rail's toggle, not two.
+       *
+       * On a phone the plugin's own button stands in for the rail's toggle:
+       * the rail is clipped to a sliver, and upstream's button goes with it,
+       * half off the screen. Both carry the same name, so a screen reader
+       * would announce "open sidebar" twice, and the keyboard would reach a
+       * button that is not on the screen.
+       *
+       * The upstream's goes out of the tree while the plugin's stands in,
+       * and comes back when the drawer is open — then it is the visible
+       * control again. `aria-hidden` and `tabindex` are enough for that:
+       * the plugin opens the drawer by clicking the upstream's button, and
+       * a click that is not the user's is stopped by neither.
+       */
+      function standInForToggle(hidden) {
+        const toggle = document.querySelector(A.sidebarToggle)
+        if (!(toggle instanceof HTMLElement)) return
+        if (hidden) {
+          if (!state.toggleTabIndexSaved) {
+            state.toggleTabIndexSaved = true
+            state.toggleTabIndex = toggle.getAttribute('tabindex') ?? ''
+          }
+          // A hidden element that still holds the focus is a focus that
+          // nobody can see: the keyboard would be on a control the reader
+          // does not announce.
+          if (document.activeElement === toggle) toggle.blur()
+          toggle.setAttribute('aria-hidden', 'true')
+          toggle.setAttribute('tabindex', '-1')
+          return
+        }
+        toggle.removeAttribute('aria-hidden')
+        if (!state.toggleTabIndexSaved) return
+        if (state.toggleTabIndex === '') toggle.removeAttribute('tabindex')
+        else toggle.setAttribute('tabindex', state.toggleTabIndex)
       }
 
       /**
