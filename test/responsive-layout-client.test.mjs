@@ -887,6 +887,45 @@ describe('dsh-desktop-responsive client', () => {
     expect(strip.querySelector('[data-dshr-action="demo:action"]')).toBeNull()
   })
 
+  it('keeps the strip within the room the header\'s own tools need', async () => {
+    // The strip shares one row with the header's own tools: the width it
+    // publishes is the room the upstream containers give it. A strip full
+    // of items would push those tools off the screen, so the room it takes
+    // is bounded and the items that do not fit are scrolled.
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    const service = plugin.services.get('dshDesktopResponsive')
+    for (let index = 0; index < 8; index += 1) {
+      service.registerAction({ id: `demo:action-${index}`, label: `示例操作 ${index}` })
+    }
+    await flush()
+    const strip = document.querySelector('[data-dshr-action-strip]')
+    // The strip is as wide as its items would be, but it takes no more
+    // than its bound.
+    strip.getBoundingClientRect = () => ({
+      width: 900,
+      height: 56,
+      top: 52,
+      left: 0,
+      right: 900,
+      bottom: 108,
+      x: 0,
+      y: 52
+    })
+    service.registerAction({ id: 'demo:action-again', label: '示例操作' })
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-actions-extra')).toBe('232px')
+  })
+
+  it('bounds the strip in the stylesheet, so that it can scroll', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const sheet = style.textContent
+    // The bound is in the sheet, and the strip scrolls sideways inside it.
+    expect(sheet).toMatch(/max-width:\s*min\(232px,\s*50vw\)/)
+    expect(sheet).toMatch(/overflow-x:\s*auto/)
+  })
+
   it('writes every plugin attribute selector with its brackets', async () => {
     await activatePlugin()
     const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
@@ -1039,6 +1078,32 @@ describe('dsh-desktop-responsive client', () => {
     await new Promise(resolve => setTimeout(resolve, 1200))
     const root = document.documentElement
     expect(root.getAttribute('data-dshr-drift')).toContain('project-console')
+  })
+
+  it('does not cry drift over a panel that is not laid out yet', async () => {
+    // The workbench's own panel is mounted by another plugin, and it may
+    // be in the DOM before it has a height. The computed height is then a
+    // percentage or `auto`, and neither is a number to judge the
+    // adaptation by: the check has to look at the height the panel is
+    // drawn with.
+    buildFrame({ width: 390, collapsed: true })
+    const panel = document.createElement('div')
+    panel.setAttribute('data-dsh-bottom-panel', 'true')
+    document.body.appendChild(panel)
+    await flush()
+    panel.getBoundingClientRect = () => ({
+      width: 390,
+      height: window.innerHeight,
+      top: 0,
+      left: 0,
+      right: 390,
+      bottom: window.innerHeight,
+      x: 0,
+      y: 0
+    })
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    const drift = document.documentElement.getAttribute('data-dshr-drift')
+    expect(drift === null || !drift.includes('bottom-panel')).toBe(true)
   })
 
   it('leaves the composer the room the screen itself takes, not the header', async () => {

@@ -165,6 +165,21 @@ window.__ModuleLoader__.load({
     /** The attribute of the strip holding the plugin's own actions. */
     const ACTION_STRIP_ATTR = 'data-dshr-action-strip'
 
+    /**
+     * The width the strip may take, in CSS pixels.
+     *
+     * The strip shares one row with the header's own tools: its width is
+     * taken out of theirs, because the plugin publishes it and the
+     * upstream containers move aside. An unbounded strip would push those
+     * tools off the screen, so the strip is bounded and the items that do
+     * not fit are reached by scrolling it sideways.
+     *
+     * The bound is also relative to the screen: on a narrow phone the
+     * header's own tools need more than half of it, and the strip keeps to
+     * what is left.
+     */
+    const ACTION_STRIP_MAX_PX = 232
+
     /** The attribute of the button that opens the header's actions. */
     const ACTIONS_ATTR = 'data-dshr-actions'
 
@@ -1179,6 +1194,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   align-items: center !important;
   gap: 4px !important;
   padding: 6px !important;
+  /* The strip may not take the room the header's own tools need. The
+     items that do not fit are reached by scrolling it sideways. */
+  box-sizing: border-box !important;
+  max-width: min(${ACTION_STRIP_MAX_PX}px, 50vw) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  overscroll-behavior-x: contain !important;
+  scrollbar-width: none !important;
   border-radius: 14px !important;
   background: var(--dsw-alias-bg-layer-2) !important;
   box-shadow: var(--dsw-elevation-panel) !important;
@@ -1186,6 +1209,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
   pointer-events: none !important;
   transform: translateY(-6px) !important;
   transition: opacity 140ms ease, transform 140ms ease;
+}
+
+:root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}]::-webkit-scrollbar {
+  display: none !important;
 }
 
 :root[data-dshr-mode='phone'] [${ACTION_STRIP_ATTR}]:empty {
@@ -1916,8 +1943,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (root.getAttribute(ROOT_MODE_ATTR) === 'phone') {
           const panel = document.querySelector(A.bottomPanel)
           if (panel !== null) {
-            const height = parseFloat(getComputedStyle(panel).height)
-            if (!(Math.abs(height - window.innerHeight) <= 8)) drift.push('bottom-panel')
+            // The height the panel is drawn with, not the one it asks for.
+            // The computed value can be a percentage or `auto` before the
+            // panel is laid out, and neither says anything about the
+            // adaptation — a percentage is not a number, and `auto` is not
+            // a height. A panel with no height at all is not on the
+            // screen, so there is nothing to adapt yet.
+            const height = panel.getBoundingClientRect().height
+            if (height > 0 && Math.abs(height - window.innerHeight) > 8) drift.push('bottom-panel')
           }
           const console_ = document.querySelector(A.consoleRoot)
           if (console_ !== null && getComputedStyle(console_).position !== 'fixed') {
@@ -1993,7 +2026,12 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           strip.appendChild(button)
         }
         const width = strip.getBoundingClientRect().width
-        document.documentElement.style.setProperty('--dsh-actions-extra', `${Math.round(width)}px`)
+        // The strip is bounded, so that it cannot push the header's own
+        // tools off the screen. The room the upstream containers give it is
+        // the room the strip really takes, not the room its items would
+        // take if they were all in sight.
+        const room = Math.min(width, ACTION_STRIP_MAX_PX)
+        document.documentElement.style.setProperty('--dsh-actions-extra', `${Math.round(room)}px`)
       }
 
       /**
@@ -2756,12 +2794,22 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
      * plain description and the plugin renders a button of its own, in its
      * own strip, inside the menu.
      */
+    /** The listeners of the service. */
+    const listeners = new Set()
+
+    /** Tell the listeners that something changed. */
+    function notify() {
+      for (const listener of listeners) listener()
+    }
+
+    /**
+     * The service itself.
+     *
+     * The actions it holds are the items the strip shows, and the listeners
+     * are told whenever one of them is added or dropped.
+     */
     function createService() {
       const actions = new Map()
-      const listeners = new Set()
-      const notify = () => {
-        for (const listener of listeners) listener()
-      }
       return {
         /**
          * Add an item to the collapsed menu.
