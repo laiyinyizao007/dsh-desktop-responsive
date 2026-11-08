@@ -478,16 +478,31 @@ window.__ModuleLoader__.load({
    the grid — it is 56 px wide and carries the navigation icons, so it is
    useful on a phone and does not need to float.
 
+   The drawer takes the whole screen. A panel that covers the content is
+   what a phone expects of a menu, and a panel that leaves a strip of the
+   conversation showing beside it reads as a panel that did not open.
+
    The grid's first track is zeroed by the script; CSS cannot do it, because
    the track list is an inline style React owns. */
 :root[data-dshr-mode='phone'] ${A.frame}[data-dshr-drawer='open'] > ${A.sidebar} {
   position: fixed !important;
-  inset: 0 auto 0 0 !important;
-  width: min(300px, 84vw) !important;
-  max-width: 84vw !important;
+  inset: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
   z-index: 40 !important;
   overscroll-behavior: contain !important;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* The drawer covers the screen, so its own bottom is the screen's bottom:
+   the safe area — a home indicator, a gesture bar — belongs to it now. And
+   the sidebar inside it takes the whole width too: it carries the width it
+   was given on a desktop screen, which on a phone leaves a strip of the
+   drawer empty. */
+:root[data-dshr-mode='phone'] ${A.frame}[data-dshr-drawer='open'] > ${A.sidebar} ${A.sidebarRoot} {
+  width: 100% !important;
+  max-width: none !important;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom)) !important;
 }
 
 /* The scrim behind the drawer. It is a real element, not a pseudo-element,
@@ -2504,7 +2519,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const observer = new MutationObserver(records => {
           if (!state.drawerOpen) return
           const content = document.querySelector(A.conversationContent)
+          const header = document.querySelector(A.conversationHeader)
           const isNavigation = records.some(record => {
+            // The header is upstream's own, and it re-renders when the
+            // layout changes — opening the drawer is such a change, so the
+            // header re-renders as the drawer opens. That is not the user
+            // picking something, and treating it as one closes the drawer
+            // the moment it opens.
+            if (header !== null && header.contains(record.target)) return false
             if (content === null) return true
             return !content.contains(record.target)
           })

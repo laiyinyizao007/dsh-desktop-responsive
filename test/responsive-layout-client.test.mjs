@@ -448,6 +448,36 @@ describe('dsh-desktop-responsive client', () => {
     expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
   })
 
+  it('keeps the drawer open when upstream re-renders the header', async () => {
+    const { frame, center, toggles } = buildFrame({ width: 390 })
+    await flush()
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+    // Upstream re-renders the header when the layout changes, and opening
+    // the drawer is such a change. That is not the user picking something,
+    // so the drawer must not close itself over it.
+    const tabs = center.querySelector('[data-dsh-region="conversation-tabs"]')
+    tabs.replaceChildren(document.createElement('button'))
+    await flush()
+    expect(toggles()).toBe(0)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+  })
+
+  it('gives the drawer the whole screen', async () => {
+    await activatePlugin()
+    const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')
+    const sheet = style.textContent
+    // A menu that covers the content is what a phone expects, and a panel
+    // that leaves a strip of the conversation showing beside it reads as a
+    // panel that did not open.
+    expect(sheet).toMatch(
+      /data-dshr-drawer='open'\] > \[data-dsh-region="sidebar"\][^}]*inset: 0 !important/
+    )
+    expect(sheet).toMatch(
+      /data-dshr-drawer='open'\] > \[data-dsh-region="sidebar"\][^}]*width: 100% !important/
+    )
+    expect(sheet).not.toMatch(/min\(300px/)
+  })
+
   it('reports a conversation that overflows the frame', async () => {
     const { center } = buildFrame({ width: 390 })
     const content = center.querySelector('[data-conversation-content]')

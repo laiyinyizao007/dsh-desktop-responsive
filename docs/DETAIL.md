@@ -9,10 +9,14 @@ conversation body pins its content at the 680 px floor of its width clamp.
 
 This plugin:
 
-- turns the **expanded sidebar** into an overlay drawer that floats over the
-  content, with a scrim, Escape-to-close and an inert content area;
+- turns the **expanded sidebar** into a drawer that takes the whole screen,
+  with a scrim, Escape-to-close and an inert content area, and closes as
+  soon as a conversation is picked;
 - **hides the collapsed rail** and replaces it with a menu button, so a
   phone gives the whole width to the content;
+- **pins the workbench switcher** under the header, so the workbench home
+  and the workbench switch are there on every conversation instead of a
+  drawer away;
 - turns the **settings dialog** into a full-screen page whose section list
   becomes a horizontal tab strip along the top;
 - lets the **conversation content** and the **home composer** follow the
@@ -267,6 +271,27 @@ panel that grows a header is left alone.
 
 The workbench home carries a title of its own, in the corner the sidebar's
 button occupies. The header makes room for it.
+
+## The drawer
+
+The expanded sidebar becomes a drawer: it leaves the grid and floats over
+the content, with a scrim behind it, Escape to close it, and the content
+behind it made inert so that the keyboard and the screen reader stay out
+of it.
+
+The drawer takes the whole screen. A panel that covers the content is what
+a phone expects of a menu, and a panel that leaves a strip of the
+conversation showing beside it reads as a panel that did not open.
+
+It closes as soon as the user picks something. A conversation is picked
+inside the drawer, so the main panel does not change — only the
+conversation behind it does. The conversation carries the session it shows,
+and that attribute is the signal; it moves when another conversation is
+opened, and it does not move while an answer streams.
+
+The header is upstream's own, and it re-renders when the layout changes —
+opening the drawer is such a change — so a re-render of the header is not
+mistaken for the user picking something.
 
 ## The project console
 
