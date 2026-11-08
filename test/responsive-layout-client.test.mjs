@@ -436,6 +436,20 @@ describe('dsh-desktop-responsive client', () => {
     expect(frame.getAttribute('data-dshr-drawer')).toBe('closed')
   })
 
+  it('closes the drawer when another conversation is picked', async () => {
+    const { frame, center, toggles } = buildFrame({ width: 390 })
+    await flush()
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+    // A conversation is picked inside the drawer, so the main panel does
+    // not change: the conversation carries the session it shows, and that
+    // is the signal.
+    const content = center.querySelector('[data-conversation-content]')
+    content.setAttribute('data-conversation-session', 'session-2')
+    await flush()
+    expect(toggles()).toBe(1)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('closed')
+  })
+
   it('keeps the drawer open while the conversation streams', async () => {
     const { frame, center, toggles } = buildFrame({ width: 390 })
     await flush()

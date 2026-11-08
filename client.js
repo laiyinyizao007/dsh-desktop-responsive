@@ -1373,6 +1373,12 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         panelObserver: null,
         /** The centre column the panel observer is attached to. */
         panelTarget: null,
+        /** The height the bottom panel was drawn with last time. */
+        lastPanelHeight: null,
+        /** The observer that watches the conversation for another session. */
+        conversationObserver: null,
+        /** The conversation the observer is attached to. */
+        conversationTarget: null,
         /** The pending animation frame of the frame watch. */
         rafHandle: null,
         /** Whether the plugin has been unloaded. */
@@ -1879,6 +1885,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         state.seenFrame = true
         markLayout(el)
         watchMainPanel()
+        watchConversation()
         syncDrawer(el, currentMode)
         syncGrid(el, currentMode)
         syncMenu(el, currentMode)
@@ -2539,6 +2546,36 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       }
 
       /**
+       * Close the drawer when the user picks a conversation.
+       *
+       * A conversation is picked inside the drawer, so the main panel does
+       * not change — only the conversation behind it does. The
+       * conversation carries the session it shows, and that attribute is
+       * the signal: it moves when another conversation is opened, and it
+       * does not move while an answer streams, which is what the panel's
+       * swap has to be careful about.
+       *
+       * The observer is re-attached when upstream replaces the
+       * conversation, so a remount does not silently stop the behaviour.
+       */
+      function watchConversation() {
+        const content = document.querySelector(A.conversationContent)
+        if (content === null) return
+        if (state.conversationObserver !== null && state.conversationTarget === content) return
+        if (state.conversationObserver !== null) state.conversationObserver.disconnect()
+        const observer = new MutationObserver(() => {
+          if (!state.drawerOpen) return
+          closeDrawer()
+        })
+        observer.observe(content, {
+          attributes: true,
+          attributeFilter: ['data-conversation-session'],
+        })
+        state.conversationObserver = observer
+        state.conversationTarget = content
+      }
+
+      /**
        * Close the usage sheet.
        */
       function closeSheet() {
@@ -2777,6 +2814,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         bodyObserver.disconnect()
         if (resizeObserver !== null) resizeObserver.disconnect()
         if (state.panelObserver !== null) state.panelObserver.disconnect()
+        if (state.conversationObserver !== null) state.conversationObserver.disconnect()
         if (state.scrim !== null) state.scrim.remove()
         if (state.menu !== null) state.menu.remove()
         for (const toggle of Object.values(state.toggles)) {
