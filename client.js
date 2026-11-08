@@ -1972,7 +1972,17 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
             // a height. A panel with no height at all is not on the
             // screen, so there is nothing to adapt yet.
             const height = panel.getBoundingClientRect().height
-            if (height > 0 && Math.abs(height - window.innerHeight) > 8) drift.push('bottom-panel')
+            // The panel grows into the screen when the layout changes, and
+            // it is measured while it is still moving: a layout that has
+            // not settled is not a drift. The height is judged only once
+            // it has stopped changing.
+            const moving = height !== state.lastPanelHeight
+            state.lastPanelHeight = height
+            if (!moving && height > 0 && Math.abs(height - window.innerHeight) > 8) {
+              drift.push('bottom-panel')
+            }
+          } else {
+            state.lastPanelHeight = null
           }
           const console_ = document.querySelector(A.consoleRoot)
           if (console_ !== null && getComputedStyle(console_).position !== 'fixed') {

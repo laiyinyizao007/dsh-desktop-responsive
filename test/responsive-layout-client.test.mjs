@@ -492,6 +492,34 @@ describe('dsh-desktop-responsive client', () => {
     expect(sheet).not.toMatch(/min\(300px/)
   })
 
+  it('does not cry drift over a panel that is still moving', async () => {
+    // The panel grows into the screen when the layout changes, and it is
+    // measured while it is still moving. A layout that has not settled is
+    // not a drift; a panel that stays the wrong height is.
+    buildFrame({ width: 390, collapsed: true })
+    const panel = document.createElement('div')
+    panel.setAttribute('data-dsh-bottom-panel', 'true')
+    document.body.appendChild(panel)
+    await flush()
+    let height = 220
+    panel.getBoundingClientRect = () => ({
+      width: 390,
+      height,
+      top: 0,
+      left: 0,
+      right: 390,
+      bottom: height,
+      x: 0,
+      y: 0
+    })
+    // The first measurement sees the panel move into the screen.
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    expect(document.documentElement.getAttribute('data-dshr-drift') ?? '').not.toContain('bottom-panel')
+    // The second one sees it settled, and settled at the wrong height.
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    expect(document.documentElement.getAttribute('data-dshr-drift') ?? '').toContain('bottom-panel')
+  })
+
   it('reports a conversation that overflows the frame', async () => {
     const { center } = buildFrame({ width: 390 })
     const content = center.querySelector('[data-conversation-content]')
