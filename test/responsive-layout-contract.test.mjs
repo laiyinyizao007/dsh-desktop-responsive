@@ -45,6 +45,10 @@ const UPSTREAM_FILES = {
   '@deepseek-ai/dsh-client-ui-settings-general': 'lib/client.js',
   '@deepseek-ai/dsh-client-ui-primitives': 'lib/index.js',
   '@deepseek-ai/dsh-client-ui-model-selection': 'lib/client.js',
+  // The sidebar's workspace tree. The plugin reads the rows of it, and
+  // the tests that read this package's source are skipped when it is not
+  // installed here.
+  '@deepseek-ai/dsh-client-ui-workspace': 'lib/client.js',
 }
 
 /** The patch file that carries the markers of one upstream package. */

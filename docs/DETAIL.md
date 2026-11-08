@@ -14,9 +14,6 @@ This plugin:
   soon as a conversation is picked;
 - **hides the collapsed rail** and replaces it with a menu button, so a
   phone gives the whole width to the content;
-- **pins the workbench switcher** under the header, so the workbench home
-  and the workbench switch are there on every conversation instead of a
-  drawer away;
 - turns the **settings dialog** into a full-screen page whose section list
   becomes a horizontal tab strip along the top;
 - lets the **conversation content** and the **home composer** follow the
@@ -342,6 +339,24 @@ that it was there at all.
 On a phone the row is simply shown. The elements upstream hides from a
 screen reader are hidden with a clip rather than an opacity, so this
 uncovers nothing that was meant to stay unseen.
+
+## The actions on a workspace row
+
+Upstream shows a row's actions when the pointer comes near it: the new
+session under a workspace, the archive and the pin on a session. A phone
+has no pointer to come near with, and a tap counts as a hover — so the
+actions turned up on the second tap, and the first was spent finding out
+that they were there at all.
+
+On a phone they are simply shown. The row keeps its own geometry, so what
+the actions take is taken from the row's title rather than from the row's
+height.
+
+They are found by the row's own key and the name of the class upstream
+gives the element: `[data-row-key] > [class*="rowActions"]`. The key is
+upstream's, and the class name is a CSS module's, whose hash changes with
+every build — but the part after the hash does not, and it is the part
+that says what the element is.
 
 ## The room below the composer
 

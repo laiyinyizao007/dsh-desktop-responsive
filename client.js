@@ -390,6 +390,15 @@ window.__ModuleLoader__.load({
         origin: 'marker',
         package: '@deepseek-ai/dsh-client-ui-conversation',
       },
+      workspaceTreeRow: {
+        // A row of the sidebar's workspace tree — a workspace or a session.
+        // The key says which one it is, and it is on every row alike. It is
+        // not the same row as the one above: that one is inside a
+        // conversation, this one is in the tree the sidebar shows.
+        selector: '[data-row-key]',
+        origin: 'attribute',
+        package: '@deepseek-ai/dsh-client-ui-workspace',
+      },
       conversationHeader: {
         selector: '[data-dsh-region="conversation-header"]',
         origin: 'marker',
@@ -1087,6 +1096,28 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
    uncovers nothing that was meant to stay unseen. */
 :root[data-dshr-mode='phone'] ${A.actionsReveal} *:not(:disabled):not([aria-disabled='true']) {
   opacity: 1 !important;
+}
+
+/* ── The actions on a workspace row ───────────────────────────────────────
+   Upstream shows a row's actions when the pointer comes near it: the
+   new session under a workspace, the archive and the pin on a session.
+   A phone has no pointer to come near with, and a tap counts as a hover —
+   so the actions turned up on the second tap, and the first was spent
+   finding out that they were there at all.
+
+   On a phone the actions are simply shown. The row keeps its own
+   geometry, so what the actions take is taken from the row's title
+   rather than from the row's height.
+
+   The actions are found by the row's own key and by what they are: the
+   child of the row that holds the buttons. The class upstream gives
+   them is a CSS module's, and its hash changes with every build — but
+   the part after the hash does not, and it is the part that says what
+   the element is. The buttons sit at more than one depth inside that
+   child — a tooltip wraps them — so the test is for a button anywhere
+   inside it. */
+:root[data-dshr-mode='phone'] ${A.workspaceTreeRow} > *:has(button) {
+  display: inline-flex !important;
 }
 
 /* ── The space below the composer ─────────────────────────────────────────
