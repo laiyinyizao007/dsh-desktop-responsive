@@ -234,6 +234,33 @@ The strip publishes its width as `--dsh-actions-extra`, and the upstream
 containers move aside for it — so the menu stays one row however many items
 are in it.
 
+The strip is **bounded**: it takes at most `--dsh-actions-extra` of 232 px,
+or half the screen, whichever is smaller, and the items that do not fit are
+reached by scrolling it sideways. The strip shares one row with the
+header's own tools, and an unbounded strip would push them off the screen.
+
+## Asking what the layout offers
+
+A plugin that wants to adapt its own surface to a phone asks the service
+rather than guessing:
+
+```ts
+const caps = service.capabilities()
+// { mode: 'phone', phone: true, drawer: true, usageSheet: true,
+//   collapsedActions: true, actionStrip: { maxWidth: 232 } }
+```
+
+The mode follows the frame's width, not the window's, so the answer is the
+same one the stylesheet acts on. The service does not promise that the mode
+stays as it is: `subscribe` tells a plugin when it changes.
+
+```ts
+const stop = service.subscribe(() => {
+  if (service.capabilities().phone) adaptToAPhone()
+  else adaptToADesktop()
+})
+```
+
 ## The bottom workbench's handle
 
 The bottom panel of the better-sidebar plugin is a desktop workbench. On a
@@ -492,3 +519,69 @@ decision is written to `data-dshr-mode` on the document root.
 The settings dialog is the exception — it is portalled into the body and
 covers the viewport, so it follows the window and carries its own
 `data-dshr-mode`.
+
+## What this plugin does not do
+
+Some things are deliberately not this plugin's business. Each of them
+belongs to the host's own client, and a second implementation of any of
+them would fight the first.
+
+- **It does not own the connection.** The web client already reconnects,
+  with its own generations and its own backoff. The plugin neither reads
+  nor writes it. A plugin that wants to know whether the host is reachable
+  asks the host.
+- **It does not own the event stream.** The host's events are delivered
+  with a "better to lose than to repeat" semantics: a logical stream is
+  reopened from a fresh snapshot rather than continued, and a notification
+  is not replayed. Anything this plugin shows has to be correct with a
+  missing event in the middle — the final state has to arrive on its own.
+- **It does not keep the page alive.** A browser keeps a tab alive; a
+  native app keeps a web view alive. Neither is the page's business.
+- **It does not draw the host's surfaces.** It changes the geometry of
+  surfaces that belong to other plugins, and it watches them for drift. It
+  does not take them over.
+
+## Running inside a native app's web view
+
+The web UI is also the fallback of a native client: the native app embeds
+it in a web view, where the shell has to fit a phone all the same. This
+plugin is what makes that fallback usable.
+
+Two things follow, and they are the native client's business, not the
+page's:
+
+- **The background.** A web view on iOS is suspended when the app goes to
+  the background, and a suspended page runs no JavaScript. The connection
+  cannot be kept alive from inside the page, so the native app has to keep
+  the view alive itself.
+- **The keyboard.** The plugin measures the *visual* viewport, which is
+  what a web view reports and what a native app's own layout does not.
+  A native app that draws its own keyboard has to say how much room it
+  takes; the plugin follows the visual viewport, and the two have to
+  agree.
+
+The comparison with the native client's design is in
+[COMPARISON-native-client.md](COMPARISON-native-client.md).
+
+## What has not been verified
+
+Stated plainly, because a document that only lists what works is a
+document that cannot be trusted about the rest.
+
+- **Nothing here has been seen on a real phone.** Every measurement in this
+  document comes from a jsdom document in `test/`, where the geometry is
+  stubbed. The numbers — 390 px, 640 px, 232 px, the 40% floor — are
+  reasoned, and some of them are checked against the upstream's own
+  stylesheets, but they have not been looked at on glass.
+- **The visual viewport behaviour is the least verified part.** Browsers
+  differ in when they report it, whether they report it at all, and what
+  they report while a sheet is open. The plugin ignores a viewport that is
+  too small to be a keyboard and re-measures on a timer, which is a
+  defence, not a proof.
+- **The patches have not been applied to a built upstream.** They are
+  written against a version of the upstream packages, and the contract
+  test checks that they still carry their markers, but no host has been
+  built from source with them since.
+- **The drift checks have not met a real drift.** The audit is exercised
+  by the tests with a surface that is deliberately broken, which is not the
+  same as an upstream that was upgraded.

@@ -998,6 +998,38 @@ describe('dsh-desktop-responsive client', () => {
     expect(sheet).toMatch(/overflow-x:\s*auto/)
   })
 
+  it('answers what it can host', async () => {
+    const service = plugin.services.get('dshDesktopResponsive')
+    // Before the frame arrives, the layout is the wide one.
+    expect(service.capabilities().mode).toBe('wide')
+    expect(service.capabilities().phone).toBe(false)
+
+    buildFrame({ width: 390 })
+    await flush()
+    const caps = service.capabilities()
+    expect(caps.mode).toBe('phone')
+    expect(caps.phone).toBe(true)
+    // The surfaces the plugin offers are named, so that another plugin
+    // can ask instead of guessing.
+    expect(caps.drawer).toBe(true)
+    expect(caps.usageSheet).toBe(true)
+    expect(caps.collapsedActions).toBe(true)
+    expect(caps.actionStrip.maxWidth).toBe(232)
+  })
+
+  it('tells a plugin when the layout changes', async () => {
+    const service = plugin.services.get('dshDesktopResponsive')
+    const seen = []
+    const stop = service.subscribe(() => seen.push(service.capabilities().mode))
+    const { setWidth } = buildFrame({ width: 390 })
+    await flush()
+    expect(seen).toEqual(['phone'])
+    setWidth(1280)
+    await flush()
+    expect(seen).toEqual(['phone', 'wide'])
+    stop()
+  })
+
   it('writes every plugin attribute selector with its brackets', async () => {
     await activatePlugin()
     const style = document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')

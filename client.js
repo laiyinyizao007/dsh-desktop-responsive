@@ -1897,6 +1897,13 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const currentMode = mode()
         state.mode = currentMode
         document.documentElement.setAttribute(ROOT_MODE_ATTR, currentMode)
+        // The service answers about the layout, so it has to be told when
+        // the layout changes. A plugin that adapts its own surface to a
+        // phone waits for this rather than watching the root attribute.
+        if (layout.mode !== currentMode) {
+          layout.mode = currentMode
+          notify()
+        }
 
         // The settings dialog is portalled into the body and covers the
         // viewport, so it follows the window rather than the frame.
@@ -2884,6 +2891,26 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
     }
 
     /**
+     * What the layout is right now.
+     *
+     * The service answers about the layout, and the layout is applied
+     * inside install(); this is where the two meet. A plugin that asks
+     * the service what it can host gets an answer about this.
+     */
+    const layout = {
+      /** 'phone' or 'wide'. */
+      mode: 'wide',
+    }
+
+    /** The listeners of the service. */
+    const listeners = new Set()
+
+    /** Tell the listeners that something changed. */
+    function notify() {
+      for (const listener of listeners) listener()
+    }
+
+    /**
      * The service other plugins use to add items to the collapsed menu.
      *
      * The menu itself is upstream's own slot: a plugin that injects into
@@ -2894,17 +2921,6 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
      * This service is for the plugins that cannot speak React. It takes a
      * plain description and the plugin renders a button of its own, in its
      * own strip, inside the menu.
-     */
-    /** The listeners of the service. */
-    const listeners = new Set()
-
-    /** Tell the listeners that something changed. */
-    function notify() {
-      for (const listener of listeners) listener()
-    }
-
-    /**
-     * The service itself.
      *
      * The actions it holds are the items the strip shows, and the listeners
      * are told whenever one of them is added or dropped.
@@ -2944,7 +2960,37 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           return [...actions.values()]
         },
         /**
-         * Watch for registrations.
+         * What this plugin can host right now.
+         *
+         * A plugin that wants to adapt its own surface to a phone asks
+         * rather than guesses: the answer says which mode the layout is in
+         * and which of this plugin's own surfaces it offers. Nothing here
+         * is a promise that the mode stays as it is — `subscribe` tells
+         * the plugin when it changes.
+         *
+         * @returns {object} The capabilities, as they are right now.
+         */
+        capabilities() {
+          return {
+            /** The layout mode: 'phone' or 'wide'. */
+            mode: layout.mode,
+            /** True while the layout is the phone one. */
+            phone: layout.mode === 'phone',
+            /** A drawer that floats over the content. */
+            drawer: true,
+            /** A bottom sheet for a row of numbers. */
+            usageSheet: true,
+            /** One menu in place of the header's row of small buttons. */
+            collapsedActions: true,
+            /** The strip inside that menu that other plugins may add to. */
+            actionStrip: {
+              /** The width it may take, in CSS pixels. */
+              maxWidth: ACTION_STRIP_MAX_PX,
+            },
+          }
+        },
+        /**
+         * Watch for registrations and for a change of layout.
          *
          * @param {Function} listener - Called after every change.
          * @returns {() => void} A function that stops watching.

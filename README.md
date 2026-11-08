@@ -68,6 +68,11 @@ React wrote is restored.
 [docs/DETAIL.md](docs/DETAIL.md) describes each of the changes, why it is
 made the way it is, and what the upstream's contract is.
 
+[docs/COMPARISON-native-client.md](docs/COMPARISON-native-client.md) sets
+this plugin against a native mobile client for the same host: what each
+one changes, where this one is better, and which of its rules are worth
+taking.
+
 ## Tests
 
 ```bash
