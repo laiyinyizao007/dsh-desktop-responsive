@@ -55,7 +55,12 @@ Harness is published as prereleases, and node-semver only lets a
 prerelease satisfy a range when some comparator in that range shares the
 version's exact `major.minor.patch` tuple and itself carries a prerelease
 tag — so a range written as `>=0.2.1-rc.1 <0.3.0` would silently exclude
-every `0.2.2-rc.*` build.
+every `0.2.2-rc.*` build. The declared range is
+`>=0.2.1-rc.1 <0.2.2 || >=0.2.2-alpha.1 <0.3.0-0`: one branch per
+`major.minor.patch` tuple the Harness publishes on. The second branch
+starts at `alpha` rather than `rc` because `alpha` sorts before `rc` on
+the same tuple, so one comparator admits both `0.2.2-alpha.*` and
+`0.2.2-rc.*`.
 
 ### Building the host from source
 

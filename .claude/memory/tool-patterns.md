@@ -35,7 +35,7 @@ npm view @deepseek-ai/dsh-client-locale dist-tags --json
 node-semver 的规则不看"范围看起来宽不宽"，只看有没有比较符和目标版本落在同一个 `major.minor.patch` 元组上、且自己带预发布标签。验证一行：
 
 ```bash
-node -e "console.log(require('semver').satisfies('0.2.2-rc.5', '^0.2.1-rc.1 || >=0.2.2-rc.1 <0.3.0-0'))"
+node -e "console.log(require('semver').satisfies('0.2.2-rc.5', '>=0.2.1-rc.1 <0.2.2 || >=0.2.2-alpha.1 <0.3.0-0'))"
 ```
 
 ## 向插件目录提交

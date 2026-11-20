@@ -224,11 +224,11 @@ sequenceDiagram
 
 | 依赖 | 类型 | 版本 | 许可证 | 说明 |
 | --- | --- | --- | --- | --- |
-| `@deepseek-ai/dsh-client-locale` | peer | `^0.2.1-rc.1 \|\| >=0.2.2-rc.1 <0.3.0-0` | MIT | 提供 `locale` 服务，宿主自带 |
+| `@deepseek-ai/dsh-client-locale` | peer | `>=0.2.1-rc.1 <0.2.2 \|\| >=0.2.2-alpha.1 <0.3.0-0` | MIT | 提供 `locale` 服务，宿主自带 |
 | `vitest` | dev | `^3.0.0` | MIT | 测试运行器 |
 | `jsdom` | dev | `^26.0.0` | MIT | 测试用 DOM |
 
-- **运行时依赖：无。** 插件的 tarball 18 个文件、约 71 kB（`npm pack --dry-run` 实测）。
+- **运行时依赖：无。** 插件的 tarball 18 个文件、71.6 kB（`npm pack --dry-run` 实测）。
 - **潜在冲突**：`@deepseek-ai/*` 是宿主单例，不要放进 `dependencies`（见 ADR-3）。
 - **可替代方案**：无——`locale` 服务由 Harness 定义。
 
@@ -307,7 +307,7 @@ sequenceDiagram
 | 诊断："the settings dialog and the conversation header were not adapted" | 宿主没打补丁 | 看宿主构建是否用了 `patches/` | 从源码构建宿主时应用补丁 |
 | 诊断："the layout for project-console stopped applying" | 第三方插件改名/升级 | 看 `data-dshr-drift` 属性 | 可选表面失效不影响其它适配 |
 | 安装报 `ERESOLVE` | peer 范围排除了宿主版本 | `npm view @deepseek-ai/dsh-client-locale` | 见 ADR-3 的范围写法 |
-| 安装 90 秒后 `exit=1` 且无报错 | DSH 安装器硬超时 | 看 `profiles\web\.dsh-market\log.ndjson` | 本插件很小（71 kB、无运行时依赖），不是超时原因；大依赖才会 |
+| 安装 90 秒后 `exit=1` 且无报错 | DSH 安装器硬超时 | 看 `profiles\web\.dsh-market\log.ndjson` | 本插件很小（71.6 kB、无运行时依赖），不是超时原因；大依赖才会 |
 
 ### 环境问题排查
 

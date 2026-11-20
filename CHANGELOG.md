@@ -23,7 +23,7 @@
 
 ### Changed（变更）
 
-- `package.json` 声明 `@deepseek-ai/dsh-client-locale` 为 peer 依赖。插件注入该包并调用 `ctx.locale.register()`，此前未声明。范围写作 `^0.2.1-rc.1 || >=0.2.2-rc.1 <0.3.0-0`：node-semver 只有当范围内某个比较符与版本自身的 `major.minor.patch` 元组一致且同样带预发布标签时，才放行预发布版本，写成 `>=0.2.1-rc.1 <0.3.0` 会静默排除所有 `0.2.2-rc.*` 构建。
+- `package.json` 声明 `@deepseek-ai/dsh-client-locale` 为 peer 依赖。插件注入该包并调用 `ctx.locale.register()`，此前未声明。范围写作 `>=0.2.1-rc.1 <0.2.2 || >=0.2.2-alpha.1 <0.3.0-0`：node-semver 只有当范围内某个比较符与版本自身的 `major.minor.patch` 元组一致且同样带预发布标签时，才放行预发布版本，写成 `>=0.2.1-rc.1 <0.3.0` 会静默排除所有 `0.2.2-rc.*` 构建。范围按元组分段，第二段下界取 `alpha` 而非 `rc`——`alpha` 在同一元组上排在 `rc` 之前，一个比较符即可同时放行 `0.2.2-alpha.*` 与 `0.2.2-rc.*`。
 - `package.json` 增加 `publishConfig.registry` 指向 `https://registry.npmjs.org`，避免在配置了镜像源的机器上把包发到镜像。
 - README 的安装说明改为真实可用的 `dsh plugin --profile web add` 命令（此前指向一个尚未发布的 npm 包），并说明 peer 范围为什么带预发布分支。
 
