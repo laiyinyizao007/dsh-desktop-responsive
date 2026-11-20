@@ -6,7 +6,7 @@
 
 ```bash
 npm install --include=dev   # NODE_ENV=production 的机器上不加这个会跳过 devDependencies
-npm test                    # vitest run；83 通过 / 4 跳过
+npm test                    # vitest run；共 91 条，装上游包时全过，只克隆仓库时 87 通过 / 4 跳过
 npm pack --dry-run          # 看 tarball 里到底装了什么、多大
 ```
 

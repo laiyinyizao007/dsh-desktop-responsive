@@ -1,7 +1,7 @@
 {
   "name": "dsh-desktop-responsive",
   "version": "0.2.0",
-  "description": "A phone-width layout for the DSH Desktop and the DeepSeek Harness web UI: the expanded sidebar becomes a floating drawer, the settings dialog becomes a full-screen tab page, and the composer follows the keyboard.",
+  "description": "A phone-width layout for the DSH Desktop, and for DeepSeek Harness web UI builds that carry the host markers: the expanded sidebar becomes a floating drawer, the composer follows the keyboard, the tables scroll sideways and the workbench takes the whole screen.",
   "type": "module",
   "main": "./index.js",
   "exports": {

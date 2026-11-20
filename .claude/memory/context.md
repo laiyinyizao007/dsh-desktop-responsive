@@ -10,7 +10,7 @@
 
 - 版本 `0.2.0`，**2026-11-20 之前从未发布到任何地方**（npm 404、无 tag、无 Release、不在 awesome-dsh-plugin 社区目录、不在 dsh-m 的策展 registry）。
 - 宿主基线：Harness `0.2.1-rc.3`（补丁也绑在这个版本上）。
-- 测试：`npm install --include=dev && npm test` → 83 通过 / 4 跳过。
+- 测试：`npm install --include=dev && npm test` → 共 91 条。装上上游包（`0.2.1-rc.3`）时 91 条全过；只克隆本仓库时 87 通过 / 4 跳过（跳过的四条要读上游源码）。
 
 ## 关键约束（改动时别踩）
 
@@ -18,6 +18,9 @@
 2. **卸载必须写回 React 的原值**，不能清空。React 只在它认为值变了时才重写样式。
 3. **官方 `@deepseek-ai/*` 用 `peerDependencies`**，不放进 `dependencies`；范围必须带显式 `||` 预发布分支（见 `docs/adr/20261120-peer-not-dependency.md`）。
 4. **补丁只加属性**，不改上游渲染结构。
+5. **宿主必须自带 `data-dsh-*` 标记。** npm 上发布的 `@deepseek-ai/dsh-client-ui-*` 包里插件要的标记一个都没有（`npm pack` 拉下来 grep 过；只有 `dsh-web-frontend` 带一个与插件无关的 `data-dsh-automatic-focus`）。插件靠 `[data-dsh-sidebar-root]` 或 `[data-dsh-region="layout"]` 定位 frame，两者都没有就整体不生效。**DSH Desktop 的构建带 `data-dsh-sidebar-root`**（它给上游 sidebar 包打了补丁），所以在 Desktop 上装完即用；纯 npm 的 web profile 上则不生效。`patches/` 补 14 个标记，sidebar 的 `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"` 要宿主自己补。
+6. **卸载要把监听器和属性都还回去。** 插件写在宿主自有元素上的每一样东西都由 `client.js` 里的登记表管（`setOwned` / `setOwnedStyle` / `releaseOwnedAll`）：自己补的标记、抽屉的 `inert`、用量面板的 dialog 语义、表格滚动监听、根元素上的自定义属性与诊断属性。卸载时逐项还原成宿主原本的值——宿主本来就有的值不能被抹掉。
+7. **写宿主自有元素要走登记表。** 直接 `el.setAttribute()` 会在卸载后留下残留；只有插件自己造出来的元素才可以直接写，因为它们会被整体移除。
 
 ## 发布路径
 

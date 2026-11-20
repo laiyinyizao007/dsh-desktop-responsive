@@ -73,6 +73,7 @@ flowchart TD
 | 插件改写了 React 的网格值 | 记住原值，卸载时写回（ADR-2） |
 | Harness 以预发布形式发布 | peer 范围带显式 `||` 预发布分支（ADR-3） |
 | 宿主没有标记时会静默半失效 | 插件自行补标记；缺必需锚点时写诊断（`data-dshr-missing`） |
+| 卸载时把宿主改过的样子留下来 | 写入宿主自有元素一律走登记表（`setOwned` / `setOwnedStyle`），卸载时逐项还原成宿主原本的值；还原前先核对元素上现在是不是插件写的那个值——宿主后来自己改过的不动 |
 | 上游布局规则变了 | 漂移自检：`verifyLayout()` 周期性核对网格轨道数与内容宽度，不符则报警 |
 
 ### 已知技术债务
@@ -81,8 +82,10 @@ flowchart TD
 | --- | --- | --- |
 | 可选锚点仍用语义类名（`.pc-root`、`.dshWbMarketHeaderText`） | 中 | 属第三方插件的私有实现，对方改名即失效；已标 `optional`，失效只记诊断 |
 | 无截图 | 低 | 目录条目在仓库里声明 `screenshots.json` 后市场才能展示 App Store 式截图 |
+| `patches/` 不含 sidebar 包的两个标记 | 高 | `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"` 不在补丁里，从源码构建的宿主必须自己补，否则插件找不到 frame；DSH Desktop 的构建自带前者，纯 npm 的 web profile 两者都没有 |
 | 无图标 | 低 | 目录条目不写 `icon:` 时回退到作者头像 |
 | 上游补丁绑定 `0.2.1-rc.3` | 中 | 上游升版需重新生成补丁（`docs/UPSTREAM.md` 有流程） |
+| 动作按钮的图标串直接 `innerHTML` 写入 | 低 | `registerAction` 传进来的 `action.icon` 不消毒就插入 DOM；同一 profile 里的插件本来就在同一执行环境、彼此同权，消毒挡不住真正的越权，故不做；若未来引入跨信任来源的注册（如远程插件市场）须先补 |
 
 ---
 
@@ -100,16 +103,18 @@ flowchart TD
 - **职责**：定位宿主元素 → 在手机宽度下改几何 → 提供服务 → 卸载时还原。
 - **入口**：`exports.apply(ctx)`（`client.js:3010`）。`apply` 里做三件事：注册文案（`ctx.locale.register`）、提供服务（`ctx.provide('dshDesktopResponsive', …)`）、安装适配（`install(ctx.locale.bind(NS), service)`）。
 - **注入**：`exports.inject = ['locale']`——需要宿主注入 `locale` 服务。
+- **导出**：`exports.anchors`（锚点表本身，即 `ANCHORS`）、`exports.phoneMax`（手机宽度断点，即 `PHONE_MAX`）。契约测试直接读 `exports.anchors`，所以清单不会和代码走偏。
 - **关键常量**：`PHONE_MAX = 640`（断点）、`NS = 'desktop-responsive'`（文案命名空间）、`ACTION_STRIP_MAX_PX = 232`。
-- **关键数据结构**：`ANCHORS`（锚点表）——插件唯一的定位入口。
+- **关键数据结构**：`ANCHORS`（锚点表）——插件唯一的定位入口；`owned`（登记表）——插件写在宿主自有元素上的每一样东西，还原的唯一依据。
 - **外部依赖**：`@deepseek-ai/dsh-client-locale`（peer，宿主提供）。
-- **测试覆盖基线**：`test/responsive-layout-client.test.mjs`（行为测试，加载进 jsdom）与 `test/responsive-layout-contract.test.mjs`（契约守卫）。当前 83 通过 / 4 跳过。
+- **测试覆盖基线**：`test/responsive-layout-client.test.mjs`（行为测试，加载进 jsdom）与 `test/responsive-layout-contract.test.mjs`（契约守卫）。共 95 条：装上上游包（`0.2.1-rc.3`）时 95 条全过；只克隆本仓库时 91 通过 / 4 跳过（跳过的四条要读上游源码，装了上游包才会跑）。
 - **风险与扩展点**：适配逻辑集中在 `install()` 内部的 `sync*()` 系列函数；新增一条适配 = 加一个锚点 + 一个 `sync*()` + 一条行为测试。
 
 ### `patches/` — 上游最小补丁
 
-- **职责**：给从源码构建的宿主加上 `data-dsh-region` 标记，使设置对话框与会话表头也能被适配。
+- **职责**：给从源码构建的宿主补上 `data-dsh-region` 标记，共 14 个——会话表头、标题行、工作区行、视图标签、输入区底栏、已发消息栈，以及设置对话框的八个部分（含页脚槽位 `data-dsh-settings-sidebar-footer`）。
 - **内容**：三个 `patch-package` 补丁，针对 `@deepseek-ai/dsh-client-ui-chat`、`-conversation`、`-settings-general` 的 `0.2.1-rc.3`。
+- **缺口**：补丁不含 `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"`——二者属于 sidebar 包，补丁没有覆盖。插件靠前者定位 frame，从源码构建的宿主必须自己补上，否则插件整体不生效（见 `docs/UPSTREAM.md`）。DSH Desktop 自己的构建给上游 sidebar 包打了补丁、带上了 `data-dsh-sidebar-root`，所以在 Desktop 上不用管这个缺口；但它不带 `data-dsh-region`，那六个表面在 Desktop 上仍保持原样。
 - **约束**：只加属性，不改渲染结构。契约见 `docs/UPSTREAM.md`。
 
 ### `cordis.patch.yml` — 补丁层
@@ -210,13 +215,19 @@ sequenceDiagram
 
 ### 8.2 漂移自检
 
-`VERIFY_INTERVAL_MS = 1000` 周期性跑 `verifyLayout()`：核对 frame 网格轨道数是否为 3、会话内容是否溢出。任一不符即写 `data-dshr-drift` 并打印一行诊断——**先找真实错误再下结论**，这条诊断就是上游规则变了的确证。
+`VERIFY_INTERVAL_MS = 1000` 周期性跑 `verifyLayout()`（顺带跑 `pruneOwned()`）：核对 frame 网格轨道数是否为 3、会话内容是否溢出。任一不符即写 `data-dshr-drift` 并打印一行诊断——**先找真实错误再下结论**，这条诊断就是上游规则变了的确证。
 
 ### 8.3 卸载
 
-`install()` 返回的清理函数按序：摘掉事件监听 → 断开观察者 → 移除插件自己造出来的元素（遮罩、菜单、开关、用量表、动作条、抽屉背景）→ 移除 `documentElement` 上的 `data-dshr-mode` / `data-dshr-missing` / `data-dshr-problem` 与 frame 上的 `data-dshr-drawer` → **把记住的 React 原值写回 `grid-template-columns`** → 移除 `<style>` 元素。
+`install()` 返回的清理函数按序：摘掉事件监听 → 断开观察者 → 移除插件自己造出来的元素（遮罩、菜单、开关、用量表、动作条、抽屉背景）→ 摘掉表格滚动监听 → **把插件写在宿主自有元素上的每一样东西还原** → 把记住的 React 原值写回 `grid-template-columns` → 移除 `<style>` 元素。
 
-注意最后一件事是有顺序依赖的：React 只在它认为值变了的时候重写样式，所以插件不能清空，只能写回。
+还原那一步由 `client.js` 里的登记表管。插件往宿主元素上写属性或内联样式时走 `setOwned` / `setOwnedStyle`，登记表记下"写之前是什么样"和"插件最后写的是什么"；还原前先核对元素上现在还是不是插件写的那个值——宿主后来自己改过的值不是插件该撤销的，原样留下。卸载时 `releaseOwnedAll()` 逐项还原——宿主本来就有的值被还原回去，插件新加的（`data-dsh-region` 标记、抽屉的 `inert`、用量面板的 dialog 语义、表格容器的标记、根元素上的 `--dsh-visual-*` / `--dsh-header-centre` / `--dsh-header-height` / `--dsh-actions-extra` 与 `data-dshr-*` 诊断属性）被摘掉。插件中途自己撤销的（抽屉关闭时的 `inert`、侧栏切换键的 `aria-hidden`）走 `releaseOwned`，还原并销账。
+
+抽屉的 `inert` 写的值是插件自己的 `dshr`：`inert` 是布尔属性，写什么值都生效，但只有写上自己的值，插件才能认出"这个 `inert` 是我的"——宿主后来在同一列上为它自己的弹层写的 `inert` 不会被插件摘走。
+
+登记表还会被修剪。宿主会随手换掉自己的元素——新会话、新表格、一次重渲染——插件不放手，被换下来的元素和挂在它们上面的滚动监听就一直留着。布局自检每一秒跑一次 `pruneOwned()`：连续两轮不在文档里的元素被还原（宿主把它挂回来时不会带着插件的标记）并放走，只离开了一瞬的（正在被移动的）留下。
+
+注意最后写回网格那件事是有顺序依赖的：React 只在它认为值变了的时候重写样式，所以插件不能清空，只能写回。
 
 ---
 
@@ -302,9 +313,10 @@ sequenceDiagram
 
 | 报错特征 | 可能原因 | 快速检查 | 解决方案 |
 | --- | --- | --- | --- |
-| 装了但布局没变 | 必需锚点缺失 | 看 `data-dshr-missing` 属性 | 宿主太旧或上游改标记名；见 `docs/UPSTREAM.md` |
+| 装了但布局没变 | 必需锚点缺失 | 看 `data-dshr-missing` 属性 | 宿主不带标记（纯 npm 的 web profile）或上游改标记名；见 `docs/UPSTREAM.md` |
 | 诊断："the phone layout does not hold: the frame grid has 4 tracks, expected 3" | 上游网格规则变了 | 看 `data-dshr-problem` 属性 | 更新 `ANCHORS` / `syncGrid()` |
-| 诊断："the settings dialog and the conversation header were not adapted" | 宿主没打补丁 | 看宿主构建是否用了 `patches/` | 从源码构建宿主时应用补丁 |
+| 诊断："upstream anchors missing: settingsContent" | 宿主没带设置对话框的标记 | 看 `data-dshr-missing` 属性 | 从源码构建宿主时应用 `patches/` |
+| 布局一点没变，但 `data-dshr-mode` 有值 | 宿主不带 `data-dsh-*` 标记，插件找不到 frame | 看宿主是否带 `data-dsh-sidebar-root`；`data-dshr-missing` 会写 `frame,sidebar,center` | 见 `docs/UPSTREAM.md` 的标记清单；DSH Desktop 的构建带，纯 npm 的 web profile 不带 |
 | 诊断："the layout for project-console stopped applying" | 第三方插件改名/升级 | 看 `data-dshr-drift` 属性 | 可选表面失效不影响其它适配 |
 | 安装报 `ERESOLVE` | peer 范围排除了宿主版本 | `npm view @deepseek-ai/dsh-client-locale` | 见 ADR-3 的范围写法 |
 | 安装 90 秒后 `exit=1` 且无报错 | DSH 安装器硬超时 | 看 `profiles\web\.dsh-market\log.ndjson` | 本插件很小（71.6 kB、无运行时依赖），不是超时原因；大依赖才会 |

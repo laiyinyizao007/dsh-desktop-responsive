@@ -301,7 +301,10 @@ button occupies. The header makes room for it.
 The expanded sidebar becomes a drawer: it leaves the grid and floats over
 the content, with a scrim behind it, Escape to close it, and the content
 behind it made inert so that the keyboard and the screen reader stay out
-of it.
+of it. The attribute carries a value of the plugin's own (`dshr`): a
+boolean attribute is true whatever it holds, but only a value of its own
+lets the plugin tell its write apart from one the host makes later for a
+reason of its own — and leave that one alone on unload.
 
 The drawer takes the whole screen. A panel that covers the content is what
 a phone expects of a menu, and a panel that leaves a strip of the
@@ -445,7 +448,7 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 
 | Anchor | Selector | Origin | Upstream package |
 | --- | --- | --- | --- |
-| `sidebarRoot` | `[data-dsh-sidebar-root]` | upstream attribute | `dsh-client-ui-sidebar` |
+| `sidebarRoot` | `[data-dsh-sidebar-root]` | marker | `dsh-client-ui-sidebar` |
 | `frame` | `[data-dsh-region="layout"]` | marker | `dsh-client-ui-layout` |
 | `sidebar` | `[data-dsh-region="sidebar"]` | marker | `dsh-client-ui-layout` |
 | `center` | `[data-dsh-region="center"]` | marker | `dsh-client-ui-layout` |
@@ -453,16 +456,23 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `sidebarResizeHandle` | `[data-side="sidebar"]` | upstream attribute | `dsh-client-ui-layout` |
 | `sidebarCollapsed` | `[data-sidebar-collapsed]` | upstream attribute | `dsh-client-ui-layout` |
 | `sidebarToggle` | `[data-dsh-region="sidebar-toggle"]` | marker | `dsh-client-ui-sidebar` |
+| `consoleRoot` | `.pc-root` | class (another plugin) | `dsh-workbench-project-console` |
+| `consoleChips` | `.pc-rail-item` | class (another plugin) | `dsh-workbench-project-console` |
+| `workbenchHeader` | `.dshWbMarketHeaderText` | class (another plugin) | `dsh-desktop-workbenches` |
+| `bottomPanel` | `[data-dsh-bottom-panel]` | upstream attribute | `dsh-better-sidebar` |
 | `conversationContent` | `[data-conversation-content]` | upstream attribute | `dsh-client-ui-conversation` |
 | `chatRegion` | `[data-conversation-region="chat"]` | upstream attribute | `dsh-client-ui-conversation` |
 | `modelMenu` | `[data-menu-material="translucent"]` | upstream attribute | `dsh-client-ui-primitives` |
 | `table` | `table` | semantic element | `dsh-client-ui-primitives` |
+| `button` | `button` | semantic element | `dsh-client-ui-primitives` |
+| `roleButton` | `[role="button"]` | semantic element | `dsh-client-ui-primitives` |
 | `composerRegion` | `[data-conversation-region="composer"]` | upstream attribute | `dsh-client-ui-conversation` |
 | `titleRow` | `[data-dsh-region="conversation-title-row"]` | marker | `dsh-client-ui-conversation` |
 | `headerUtilities` | `[data-slot="conversation.session.header.utilities"]` | upstream attribute | `dsh-client-ui-conversation` |
 | `headerCorner` | `[data-slot="conversation.session.header.corner"]` | upstream attribute | `dsh-client-ui-conversation` |
 | `conversationWidthHandle` | `[data-width-handle]` | upstream attribute | `dsh-client-ui-conversation` |
 | `workspaceRow` | `[data-dsh-region="conversation-workspace-row"]` | marker | `dsh-client-ui-conversation` |
+| `workspaceTreeRow` | `[data-row-key]` | upstream attribute | `dsh-client-ui-workspace` |
 | `chatUserStack` | `[data-dsh-region="chat-user-stack"]` | marker | `dsh-client-ui-chat` |
 | `actionsReveal` | `[data-actions-reveal="hover"]` | upstream attribute | `dsh-client-ui-chat` |
 | `conversationHeader` | `[data-dsh-region="conversation-header"]` | marker | `dsh-client-ui-conversation` |
@@ -475,14 +485,16 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `settingsContent` | `[data-dsh-region="settings-content"]` | marker | `dsh-client-ui-settings-general` |
 | `settingsHeader` | `[data-dsh-region="settings-header"]` | marker | `dsh-client-ui-settings-general` |
 | `settingsOptions` | `[data-dsh-region="settings-options"]` | marker | `dsh-client-ui-settings-general` |
-| `settingsFooter` | `[data-dsh-settings-sidebar-footer]` | upstream attribute | `dsh-client-ui-settings-general` |
+| `settingsFooter` | `[data-dsh-settings-sidebar-footer]` | marker | `dsh-client-ui-settings-general` |
 
-A *marker* anchor is a `data-dsh-region` attribute. A host that builds
-upstream from source can add one with a minimal patch — the ones this
-plugin knows about are in `patches/` — and the plugin adds the ones it can
-work out for itself: it finds the frame by the grid it owns, and the
-sidebar's and the centre's columns by what they hold. A patch only adds an
-attribute; it never restructures upstream's render tree.
+A *marker* anchor is a `data-dsh-*` attribute the host adds: mostly a
+`data-dsh-region`, and in two cases a name of its own — the sidebar's
+root and the settings footer's slot. A host that builds upstream from
+source can add one with a minimal patch — the ones this plugin knows about
+are in `patches/` — and the plugin adds the ones it can work out for
+itself: it finds the frame by the grid it owns, and the sidebar's and the
+centre's columns by what they hold. A patch only adds an attribute; it
+never restructures upstream's render tree.
 
 `test/responsive-layout-contract.test.mjs` guards the manifest: it fails when an
 anchor disappears from its package, when a patch stops carrying its marker,
@@ -582,6 +594,33 @@ document that cannot be trusted about the rest.
   written against a version of the upstream packages, and the contract
   test checks that they still carry their markers, but no host has been
   built from source with them since.
+- **The published upstream packages carry none of the markers the plugin
+  needs.** This was checked against the tarballs, not assumed: none of
+  `@deepseek-ai/dsh-client-ui-{layout,sidebar,chat,conversation,settings-general,primitives,workspace}@0.2.2-rc.5`
+  contains a `data-dsh-region` or a `data-dsh-sidebar-root`, and neither
+  does `@deepseek-ai/dsh-web-app@0.2.2-rc.5`. The one `data-dsh-*`
+  attribute the published tree does ship is
+  `data-dsh-automatic-focus`, in `@deepseek-ai/dsh-web-frontend@0.2.2-rc.5`,
+  and it belongs to another plugin's contract. The attributes the plugin
+  reads from the upstream — `[data-rightbar-col]`,
+  `[data-sidebar-collapsed]`, `[data-side]`, `[data-conversation-content]`,
+  `[data-conversation-region]`, `[data-width-handle]`, `[data-slot]`,
+  `[data-actions-reveal]`, `[data-menu-material]`, `[data-row-key]` — are
+  all there. The markers are not: they exist only in a host build that
+  adds them. The plugin has therefore never been run here against a
+  host that carries them.
+- **The DSH Desktop's build carries one of them.** Two independent forks
+  of the Desktop (`dataelement/dsh-desktop` and
+  `wang-yi-bit64/dsh-desktop`) patch the upstream's sidebar package to
+  add `data-dsh-sidebar-root`, which is the marker the plugin finds the
+  frame through — so the plugin works on the Desktop as it is. Neither
+  fork adds the `data-dsh-region` markers, so the six surfaces that need
+  them keep the Desktop's own shape there.
+- **The patches are not enough on their own.** They carry fourteen of the
+  markers the plugin needs. The two that are missing — the sidebar's root
+  and the sidebar toggle — belong to the sidebar package, which the
+  patches do not touch, and without the first of them the plugin does not
+  find the frame at all.
 - **The drift checks have not met a real drift.** The audit is exercised
   by the tests with a surface that is deliberately broken, which is not the
   same as an upstream that was upgraded.
