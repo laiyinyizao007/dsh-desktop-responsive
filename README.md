@@ -1,7 +1,7 @@
 # dsh-desktop-responsive
 
-A phone-width layout for the **DSH Desktop** and the **DeepSeek Harness**
-web UI.
+A phone-width layout for the **DSH Desktop** and for a **DeepSeek
+Harness** web UI whose build carries the host markers.
 
 The Harness is a desktop application: a three-column shell with a sidebar, a
 conversation and a right-hand column of panels, and a composer that sits at
@@ -15,53 +15,102 @@ unloaded.
 
 ## What it changes
 
-| | On a phone |
-| --- | --- |
-| The sidebar | The expanded one becomes a floating drawer over the content; the rail of icons stays |
-| The settings dialog | A full-screen page of tabs instead of a floating panel |
-| The composer | Follows the keyboard, and leaves the same room below it that the header takes above |
-| The messages | The bubble widens to the screen, and the body type grows a step |
-| The header | The tabs fold away behind one chevron, and the session's tools fold into one menu |
-| The usage row | Folds into the model picker, and opens as a sheet |
-| The tables | Scroll sideways, with a shadow at the edge |
-| The workbench | The bottom workbench and the project console take the whole screen |
+| | On a phone | Needs |
+| --- | --- | --- |
+| The sidebar | The expanded one becomes a floating drawer over the content; the rail of icons stays | the frame marker, plus upstream attributes |
+| The settings dialog | A full-screen page of tabs instead of a floating panel | `data-dsh-region` markers |
+| The composer | Follows the keyboard, and leaves the same room below it that the header takes above | the frame marker, plus upstream attributes |
+| The messages | The bubble widens to the screen, and the body type grows a step | `data-dsh-region` markers |
+| The header | The tabs fold away behind one chevron, and the session's tools fold into one menu | `data-dsh-region` markers |
+| The usage row | Folds into the model picker, and opens as a sheet | `data-dsh-region` markers |
+| The tables | Scroll sideways, with a shadow at the edge | the frame marker, plus upstream attributes |
+| The workbench | The bottom workbench and the project console take the whole screen | the frame marker, plus upstream attributes |
+
+The plugin finds the layout by the attributes the upstream ships, and by
+the markers a host build adds. Everything it adapts lives inside the
+frame, so one marker is needed before anything at all can happen: the
+plugin finds the frame through `[data-dsh-sidebar-root]`. The DSH
+Desktop's build carries it — it patches the upstream's sidebar package to
+add it — so the plugin works there as it is. The packages published to npm
+do not carry it, so on a plain `dsh --profile web` install the plugin finds
+nothing to adapt, says so in the console, and leaves the page alone.
+
+Once the frame is found, the sidebar drawer, the composer that follows the
+keyboard, the tables and the workbench need only the attributes the
+upstream ships. The header, the view tabs, the usage sheet, the message
+bubbles and the settings dialog need the `data-dsh-region` markers, and a
+host built from source with the patches in `patches/` gets them.
+[docs/UPSTREAM.md](docs/UPSTREAM.md) lists every marker and says which one
+carries what.
 
 ## Install
 
-The plugin is a plain DSH plugin. Put it in the profile's plugins and
-restart the Harness:
+The plugin is a plain DSH plugin. Install it into a profile and restart
+the Harness:
 
 ```bash
-cd ~/.dsh/profiles/web/node_modules
-npm install dsh-desktop-responsive
+# from npm
+dsh plugin --profile web add dsh-desktop-responsive
+
+# from GitHub
+dsh plugin --profile web add github:laiyinyizao007/dsh-desktop-responsive
+
+# from a local checkout
+dsh plugin --profile web add /path/to/dsh-desktop-responsive
 ```
 
-or, from a checkout:
+Nothing else is needed beyond the markers above: the plugin finds the
+layout by itself.
 
-```bash
-npm install /path/to/dsh-desktop-responsive
-```
+`dsh plugin` forwards to `pnpm` in the profile directory, so the profile's
+own `pnpm-workspace.yaml` decides how the install runs. The plugin has no
+runtime dependencies; it declares `@deepseek-ai/dsh-client-locale` as a peer
+because that is the package that provides the `locale` service it registers
+its own strings with, and the Harness already ships it.
 
-Nothing else is needed: the plugin finds the layout by itself.
+The peer range carries an explicit prerelease branch on purpose. The
+Harness is published as prereleases, and node-semver only lets a
+prerelease satisfy a range when some comparator in that range shares the
+version's exact `major.minor.patch` tuple and itself carries a prerelease
+tag — so a range written as `>=0.2.1-rc.1 <0.3.0` would silently exclude
+every `0.2.2-rc.*` build. The declared range is
+`>=0.2.1-rc.1 <0.2.2 || >=0.2.2-alpha.1 <0.3.0-0`: one branch per
+`major.minor.patch` tuple the Harness publishes on. The second branch
+starts at `alpha` rather than `rc` because `alpha` sorts before `rc` on
+the same tuple, so one comparator admits both `0.2.2-alpha.*` and
+`0.2.2-rc.*`.
 
 ### Building the host from source
 
 A host that builds the upstream from source can apply the patches in
-`patches/`, and the plugin then adapts the settings dialog and the
-conversation's header as well. See [docs/UPSTREAM.md](docs/UPSTREAM.md) for
-the contract and for what each part of the plugin does without them.
+`patches/`. They add the markers the plugin looks for on the conversation's
+header, title row, workspace row and view tabs, on the composer's dock, on
+the stack of sent messages, and on the eight parts of the settings dialog.
+Two markers the plugin needs are not in them — the sidebar's root and the
+sidebar toggle — so a from-source build has to add those as well, or the
+plugin will not find the frame. The DSH Desktop's build already carries
+the sidebar's root, so there the plugin works without them. See
+[docs/UPSTREAM.md](docs/UPSTREAM.md) for the contract and for what each
+part of the plugin does without them.
 
 ## How it stays out of the host's way
 
 The upstream's class names are hashes — `pI_x6G_frame` — and they change
 with every build. A selector on one breaks silently. The plugin therefore
-never names a class: it uses the markers the upstream carries, and where the
+never names one: it uses the markers the upstream carries, and where the
 upstream has none it marks the elements itself, the same way a host with
-the patches would.
+the patches would. The only class names it uses belong to other plugins'
+own surfaces — the project console, the workbench home — and they are
+optional: when one of them is renamed, that one adaptation stops applying
+and the plugin says so, while the rest carry on.
 
 The plugin also puts back what it changed. The layout's grid is React's,
 and the plugin writes it only while it is in charge; on unload the value
-React wrote is restored.
+React wrote is restored. Everything else it wrote on the host's own
+elements — the markers it added, the `inert` it put on the columns behind
+the drawer, the dialog semantics it gave the composer's dock — goes back
+to what it was. A value the host has changed in the meantime is left
+alone: what the host wrote last is not the plugin's to undo.
 
 ## The details
 
@@ -87,9 +136,9 @@ the install says "up to date" and installs nothing.
 
 The tests are behaviour tests: they load the plugin into a DOM, and check
 what it does to the layout rather than what its source says. A guard fails
-the build if a hashed class name appears in the plugin's source, or if a
-rule swallowed another one — the kind of mistake a browser drops without a
-word.
+the build if a hashed class name appears in the plugin's source, if a
+marker nothing provides slips into the manifest, or if a rule swallowed
+another one — the kind of mistake a browser drops without a word.
 
 ## Licence
 

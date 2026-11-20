@@ -330,10 +330,12 @@ window.__ModuleLoader__.load({
         package: '@deepseek-ai/dsh-client-ui-conversation',
       },
       sidebarRoot: {
-        // Upstream marks the sidebar's own root. It is the way in to the
-        // frame for a host that does not carry the markers below.
+        // The host's build marks the sidebar's own root. It is the way in
+        // to the frame for a host that does not carry the markers below —
+        // the published upstream package carries no `data-dsh-*` attribute
+        // at all, so without it the plugin has nothing to adapt.
         selector: '[data-dsh-sidebar-root]',
-        origin: 'attribute',
+        origin: 'marker',
         package: '@deepseek-ai/dsh-client-ui-sidebar',
       },
       chatRegion: {
@@ -462,8 +464,10 @@ window.__ModuleLoader__.load({
         surface: 'settings',
       },
       settingsFooter: {
+        // A marker, like the rest of the settings dialog's: the patch for
+        // this package carries it.
         selector: '[data-dsh-settings-sidebar-footer]',
-        origin: 'attribute',
+        origin: 'marker',
         package: '@deepseek-ai/dsh-client-ui-settings-general',
         surface: 'settings',
       },
@@ -1376,10 +1380,6 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         scrim: null,
         /** The menu button that opens the drawer. */
         menu: null,
-        /** Whether the rail's own tabindex has been put away. */
-        toggleTabIndexSaved: false,
-        /** The tabindex the rail's toggle had, '' when it had none. */
-        toggleTabIndex: '',
         /** The chevrons that fold the top and bottom rows back. */
         toggles: {},
         /** The entry that opens the usage sheet. */
@@ -1414,6 +1414,213 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         rafHandle: null,
         /** Whether the plugin has been unloaded. */
         disposed: false,
+        /** The table scrollers the plugin is listening to. */
+        scrollers: new Map(),
+        /** The pending measurement after a focus change. */
+        focusOutTimer: null,
+        /** The title row the size observer is watching. */
+        headerRow: null,
+      }
+
+      /**
+       * The value the plugin's `inert` carries.
+       *
+       * `inert` is a boolean attribute: any value keeps the element out of
+       * the tab order and the pointer. A value of the plugin's own is what
+       * lets it tell its write apart from the host's later one — a host
+       * that opens a dialog of its own over the same column writes
+       * `inert` too, and the plugin must not take the host's away when it
+       * goes.
+       */
+      const INERT_OWN = 'dshr'
+
+      /** The elements seen out of the document on the last prune pass. */
+      let detached = new WeakSet()
+
+      /**
+       * What the plugin changed on elements it does not own.
+       *
+       * The plugin writes attributes and inline styles on upstream's own
+       * elements: the frame, the columns, the table scrollers, the
+       * composer's dock. Upstream's values have to survive the plugin's
+       * visit, so every one of those writes is remembered here — what was
+       * there before — and put back on unload.
+       *
+       * The plugin's own elements do not need this: they are removed.
+       */
+      const owned = new Map()
+
+      /**
+       * The record of what one element held before the plugin wrote to it.
+       */
+      function ownedRecord(el) {
+        let record = owned.get(el)
+        if (record === undefined) {
+          record = { attrs: new Map(), styles: new Map() }
+          owned.set(el, record)
+        }
+        return record
+      }
+
+      /**
+       * Write an attribute, and remember what was there.
+       *
+       * Only the first write of an attribute is remembered: after that the
+       * value the plugin wants is the one that counts, and what has to
+       * come back on unload is the value from before the plugin arrived.
+       * What the plugin last wrote is remembered too, so that the host's
+       * own change to the attribute can be told apart from the plugin's.
+       */
+      function setOwned(el, name, value) {
+        if (el === null || el === undefined) return
+        const record = ownedRecord(el)
+        let entry = record.attrs.get(name)
+        if (entry === undefined) {
+          entry = {
+            name,
+            had: el.hasAttribute(name),
+            before: el.getAttribute(name),
+            wrote: null,
+          }
+          record.attrs.set(name, entry)
+        }
+        entry.wrote = value
+        el.setAttribute(name, value)
+      }
+
+      /**
+       * Write an inline style property, and remember what was there.
+       */
+      function setOwnedStyle(el, name, value) {
+        if (el === null || el === undefined) return
+        const record = ownedRecord(el)
+        let entry = record.styles.get(name)
+        if (entry === undefined) {
+          entry = {
+            name,
+            had: el.style.getPropertyValue(name) !== '',
+            before: el.style.getPropertyValue(name),
+            wrote: null,
+          }
+          record.styles.set(name, entry)
+        }
+        entry.wrote = value
+        el.style.setProperty(name, value)
+      }
+
+      /**
+       * Whether the element still carries what the plugin wrote.
+       *
+       * The host writes on its own elements too, and it may have done so
+       * since — React re-renders the composer and gives the dock its own
+       * label, for instance. A value that is no longer the plugin's is
+       * left alone: the host's newer value is not the plugin's to undo.
+       */
+      function stillOurs(el, entry) {
+        if (entry.wrote === null) return true
+        return el.getAttribute(entry.name) === entry.wrote
+      }
+
+      /** Whether the element still carries the style the plugin wrote. */
+      function stillOursStyle(el, entry) {
+        if (entry.wrote === null) return true
+        return el.style.getPropertyValue(entry.name) === entry.wrote
+      }
+
+      /**
+       * Put one remembered attribute back, and forget it.
+       *
+       * Some of the plugin's writes are undone long before the plugin
+       * leaves — the sidebar's toggle comes back into the tree when the
+       * drawer opens. Those are given back here rather than at the end.
+       */
+      function releaseOwned(el, name) {
+        const record = owned.get(el)
+        if (record === undefined) return
+        const entry = record.attrs.get(name)
+        if (entry === undefined) return
+        record.attrs.delete(name)
+        if (!stillOurs(el, entry)) return
+        if (entry.had) el.setAttribute(name, entry.before)
+        else el.removeAttribute(name)
+      }
+
+      /**
+       * Put one remembered style property back, and forget it.
+       */
+      function releaseOwnedStyle(el, name) {
+        const record = owned.get(el)
+        if (record === undefined) return
+        const entry = record.styles.get(name)
+        if (entry === undefined) return
+        record.styles.delete(name)
+        if (!stillOursStyle(el, entry)) return
+        if (entry.had) el.style.setProperty(name, entry.before)
+        else el.style.removeProperty(name)
+      }
+
+      /**
+       * Put everything the plugin changed on one element back.
+       */
+      function releaseElement(el, record) {
+        for (const entry of record.attrs.values()) {
+          if (!stillOurs(el, entry)) continue
+          if (entry.had) el.setAttribute(entry.name, entry.before)
+          else el.removeAttribute(entry.name)
+        }
+        for (const entry of record.styles.values()) {
+          if (!stillOursStyle(el, entry)) continue
+          if (entry.had) el.style.setProperty(entry.name, entry.before)
+          else el.style.removeProperty(entry.name)
+        }
+      }
+
+      /**
+       * Put everything the plugin changed on someone else's element back.
+       */
+      function releaseOwnedAll() {
+        for (const [el, record] of owned) releaseElement(el, record)
+        owned.clear()
+      }
+
+      /**
+       * Let go of the elements the host has thrown away.
+       *
+       * The host replaces its own elements freely — a new conversation, a
+       * new table, a re-rendered panel — and the plugin's records would
+       * keep the old ones, and the listeners on them, for as long as it
+       * lives. An element that has been out of the document for two passes
+       * in a row is gone for good; one that is only out for a moment is
+       * being moved, and its record stays.
+       *
+       * The element is put back before it is let go: a host that mounts it
+       * again must not find the plugin's marker still on it. That is also
+       * what makes letting go safe — every write the plugin makes is on an
+       * element it finds again by asking the document (the anchors, the
+       * tables, the composer's dock), so a mounted-again element is found,
+       * found clean, and written again by the next sync.
+       */
+      function pruneOwned() {
+        const gone = new WeakSet()
+        for (const [el, record] of owned) {
+          if (el.isConnected) continue
+          if (!detached.has(el)) {
+            gone.add(el)
+            continue
+          }
+          releaseElement(el, record)
+          owned.delete(el)
+        }
+        for (const [scroller, onScroll] of state.scrollers) {
+          if (scroller.isConnected) continue
+          if (!detached.has(scroller)) {
+            gone.add(scroller)
+            continue
+          }
+          scroller.removeEventListener('scroll', onScroll)
+          state.scrollers.delete(scroller)
+        }
+        detached = gone
       }
 
       /**
@@ -1445,10 +1652,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const attribute = match[1]
         const value = match[2]
         if (value === undefined) {
-          if (!el.hasAttribute(attribute)) el.setAttribute(attribute, '')
+          if (!el.hasAttribute(attribute)) setOwned(el, attribute, '')
           return
         }
-        if (el.getAttribute(attribute) !== value) el.setAttribute(attribute, value)
+        if (el.getAttribute(attribute) !== value) setOwned(el, attribute, value)
       }
 
       /**
@@ -1538,14 +1745,15 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       function syncViewport() {
         const { width, height } = visibleSize()
         const root = document.documentElement
-        root.style.setProperty('--dsh-visual-width', `${width}px`)
-        root.style.setProperty('--dsh-visual-height', `${height}px`)
-        root.style.setProperty('--dsh-visual-offset', `${visibleOffset()}px`)
+        setOwnedStyle(root, '--dsh-visual-width', `${width}px`)
+        setOwnedStyle(root, '--dsh-visual-height', `${height}px`)
+        setOwnedStyle(root, '--dsh-visual-offset', `${visibleOffset()}px`)
         // What the page measured, in a form a device can be asked for: the
         // numbers are also on the root, so a report of a wrong layout can
         // say what the plugin saw.
         const vv = window.visualViewport
-        root.setAttribute(
+        setOwned(
+          root,
           VIEWPORT_ATTR,
           `${width}x${height}/${window.innerWidth}x${window.innerHeight}` +
             (vv !== undefined && vv !== null ? `/${Math.round(vv.height)}` : '')
@@ -1613,9 +1821,9 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
             `[${STYLE_KEY}] upstream anchors missing: ${report}. ` +
               'The phone layout is partly inactive. Check the data-dsh-region patches.'
           )
-          document.documentElement.setAttribute(MISSING_ATTR, report)
+          setOwned(document.documentElement, MISSING_ATTR, report)
         } else {
-          document.documentElement.removeAttribute(MISSING_ATTR)
+          releaseOwned(document.documentElement, MISSING_ATTR)
         }
         return missing
       }
@@ -1659,7 +1867,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (problems.length === 0) {
           if (state.reportedProblems !== '') {
             state.reportedProblems = ''
-            document.documentElement.removeAttribute(PROBLEM_ATTR)
+            releaseOwned(document.documentElement, PROBLEM_ATTR)
           }
           return
         }
@@ -1670,7 +1878,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           `[${STYLE_KEY}] the phone layout does not hold: ${report}. ` +
             'An upstream layout rule changed; check the anchor manifest.'
         )
-        document.documentElement.setAttribute(PROBLEM_ATTR, report)
+        setOwned(document.documentElement, PROBLEM_ATTR, report)
       }
 
       /**
@@ -1704,6 +1912,10 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // Only the first track is replaced; the rest keep their own spacing.
         // On a phone the rail's track goes away as well: 56 px of icons is
         // a sixth of the screen, and the drawer replaces it.
+        // The grid is the one write that does not go through the
+        // registry, on purpose (ADR-2): React only rewrites a style it has
+        // seen change, so the plugin tracks the value it wrote and the
+        // value React wrote, and puts React's back on unload.
         const collapsed = current.replace(/^\s*\S+/, '0px')
         if (collapsed !== current) el.style.setProperty('grid-template-columns', collapsed)
         state.writtenGrid = collapsed
@@ -1849,7 +2061,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // collapsed state starts out as `drawerOpen: false`, so an early
         // return on "no change" would leave the attribute unset and the
         // stylesheet without the state it keys off.
-        el.setAttribute(DRAWER_ATTR, open ? 'open' : 'closed')
+        setOwned(el, DRAWER_ATTR, open ? 'open' : 'closed')
         if (open === state.drawerOpen) return
         state.drawerOpen = open
 
@@ -1862,7 +2074,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           // keyboard and the screen reader out of it too.
           for (const anchor of [A.center, A.rightbarColumn]) {
             const el = document.querySelector(anchor)
-            if (el !== null) el.setAttribute('inert', '')
+            if (el !== null) setOwned(el, 'inert', INERT_OWN)
           }
           const toggle = document.querySelector(A.sidebarToggle)
           if (toggle instanceof HTMLElement && document.activeElement !== toggle) {
@@ -1882,7 +2094,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         }
         for (const anchor of [A.center, A.rightbarColumn]) {
           const el = document.querySelector(anchor)
-          if (el !== null) el.removeAttribute('inert')
+          if (el !== null) releaseOwned(el, 'inert')
         }
         const previous = state.focusBeforeDrawer
         state.focusBeforeDrawer = null
@@ -1896,7 +2108,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const el = frame()
         const currentMode = mode()
         state.mode = currentMode
-        document.documentElement.setAttribute(ROOT_MODE_ATTR, currentMode)
+        setOwned(document.documentElement, ROOT_MODE_ATTR, currentMode)
         // The service answers about the layout, so it has to be told when
         // the layout changes. A plugin that adapts its own surface to a
         // phone waits for this rather than watching the root attribute.
@@ -1909,7 +2121,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // viewport, so it follows the window rather than the frame.
         const overlay = document.querySelector(A.settingsOverlay)
         if (overlay !== null) {
-          overlay.setAttribute(
+          setOwned(
+            overlay,
             ROOT_MODE_ATTR,
             visibleSize().width <= PHONE_MAX ? 'phone' : 'wide'
           )
@@ -1963,7 +2176,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (panel === null) return
         if (currentMode !== 'phone') {
           for (const el of panel.querySelectorAll(`[${NO_DRAG_ATTR}]`)) {
-            el.removeAttribute(NO_DRAG_ATTR)
+            releaseOwned(el, NO_DRAG_ATTR)
           }
           return
         }
@@ -1976,12 +2189,12 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // marks the one it belongs to.
         const layer = panel.parentElement
         if (layer !== null && layer !== undefined) {
-          layer.setAttribute(PANEL_LAYER_ATTR, '')
+          setOwned(layer, PANEL_LAYER_ATTR, '')
         }
         const handle = panel.firstElementChild
         if (handle === null) return
         if (getComputedStyle(handle).cursor !== 'row-resize') return
-        handle.setAttribute(NO_DRAG_ATTR, '')
+        setOwned(handle, NO_DRAG_ATTR, '')
       }
 
       /**
@@ -2033,14 +2246,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         }
         if (drift.length === 0) {
           if (root.hasAttribute(DRIFT_ATTR)) {
-            root.removeAttribute(DRIFT_ATTR)
+            releaseOwned(root, DRIFT_ATTR)
             console.info(`[${STYLE_KEY}] every adaptation applies.`)
           }
           return
         }
         const report = drift.join(' ')
         if (root.getAttribute(DRIFT_ATTR) === report) return
-        root.setAttribute(DRIFT_ATTR, report)
+        setOwned(root, DRIFT_ATTR, report)
         console.error(
           `[${STYLE_KEY}] the layout for ${report} stopped applying. ` +
             'The plugin it belongs to was probably upgraded and renamed its classes.'
@@ -2089,7 +2302,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
               '<circle cx="12.5" cy="8" r="1.4" fill="currentColor"/></svg>'
           }
           button.addEventListener('click', () => {
-            document.documentElement.removeAttribute(ACTIONS_OPEN_ATTR)
+            releaseOwned(document.documentElement, ACTIONS_OPEN_ATTR)
             sync(state.mode)
             if (action.onSelect !== null) action.onSelect()
           })
@@ -2101,7 +2314,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // the room the strip really takes, not the room its items would
         // take if they were all in sight.
         const room = Math.min(width, ACTION_STRIP_MAX_PX)
-        document.documentElement.style.setProperty('--dsh-actions-extra', `${Math.round(room)}px`)
+        setOwnedStyle(document.documentElement, '--dsh-actions-extra', `${Math.round(room)}px`)
       }
 
       /**
@@ -2125,8 +2338,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         button.addEventListener('click', () => {
           const root = document.documentElement
           const open = root.getAttribute(ACTIONS_OPEN_ATTR) === 'open'
-          if (open) root.removeAttribute(ACTIONS_OPEN_ATTR)
-          else root.setAttribute(ACTIONS_OPEN_ATTR, 'open')
+          if (open) releaseOwned(root, ACTIONS_OPEN_ATTR)
+          else setOwned(root, ACTIONS_OPEN_ATTR, 'open')
           sync(state.mode)
         })
         document.body.appendChild(button)
@@ -2162,13 +2375,24 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       function syncHeaderCentre() {
         const row = document.querySelector(A.titleRow)
         const root = document.documentElement
+        // A row whose size changed on its own — a web font that arrived
+        // late, a title that wrapped — is not a change in the page's tree,
+        // so the observers that watch the tree say nothing about it. The
+        // browser can say so itself: watching the row costs nothing until
+        // its box actually moves. Environments without the observer fall
+        // back to measuring on the layout's own timer.
+        if (headerObserver !== null && row !== state.headerRow) {
+          if (state.headerRow !== null) headerObserver.unobserve(state.headerRow)
+          state.headerRow = row
+          if (row !== null) headerObserver.observe(row)
+        }
         if (row === null) {
-          root.style.removeProperty('--dsh-header-centre')
+          releaseOwnedStyle(root, '--dsh-header-centre')
           return
         }
         const rect = row.getBoundingClientRect()
         if (rect.height === 0) {
-          root.style.removeProperty('--dsh-header-centre')
+          releaseOwnedStyle(root, '--dsh-header-centre')
           return
         }
         // The frame is moved down by the visual offset so that the header
@@ -2177,12 +2401,12 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // the row's moved position and follow it down the screen, and the
         // header is left with its title alone.
         const centre = rect.y + rect.height / 2 - visibleOffset()
-        root.style.setProperty('--dsh-header-centre', `${Math.round(centre)}px`)
+        setOwnedStyle(root, '--dsh-header-centre', `${Math.round(centre)}px`)
         // The header's own height, so that the composer can leave the same
         // room below it that the header takes above.
         const header = document.querySelector(A.conversationHeader)
         const headerHeight = header === null ? 0 : Math.round(header.getBoundingClientRect().height)
-        if (headerHeight > 0) root.style.setProperty('--dsh-header-height', `${headerHeight}px`)
+        if (headerHeight > 0) setOwnedStyle(root, '--dsh-header-height', `${headerHeight}px`)
       }
 
       /**
@@ -2198,7 +2422,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (target.closest(`[${ACTIONS_ATTR}]`) !== null) return
         if (target.closest(A.headerUtilities) !== null) return
         if (target.closest(A.headerCorner) !== null) return
-        document.documentElement.removeAttribute(ACTIONS_OPEN_ATTR)
+        releaseOwned(document.documentElement, ACTIONS_OPEN_ATTR)
         sync(state.mode)
       }
 
@@ -2218,7 +2442,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const show = currentMode === 'phone' && hasActions && !state.drawerOpen
         if (!show) {
           button.removeAttribute('data-dshr-toggle-visible')
-          document.documentElement.removeAttribute(ACTIONS_OPEN_ATTR)
+          releaseOwned(document.documentElement, ACTIONS_OPEN_ATTR)
           return
         }
         button.setAttribute('data-dshr-toggle-visible', 'true')
@@ -2240,8 +2464,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           .getPropertyValue('--dsh-content-font-size')
           .trim()
         const isDefault = value === '' || value === '14px'
-        if (isDefault) document.documentElement.setAttribute(CONTENT_SCALE_ATTR, 'on')
-        else document.documentElement.removeAttribute(CONTENT_SCALE_ATTR)
+        if (isDefault) setOwned(document.documentElement, CONTENT_SCALE_ATTR, 'on')
+        else releaseOwned(document.documentElement, CONTENT_SCALE_ATTR)
       }
 
       /**
@@ -2257,14 +2481,17 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         for (const table of document.querySelectorAll(A.table)) {
           const scroller = table.parentElement
           if (scroller === null) continue
-          scroller.setAttribute(TABLE_SCROLL_ATTR, '')
+          setOwned(scroller, TABLE_SCROLL_ATTR, '')
           // The flag lives on its own attribute: `dshrTableScroll` would
           // map back onto the marker and overwrite it.
           if (scroller.dataset.dshrTableBound !== 'true') {
-            scroller.dataset.dshrTableBound = 'true'
-            scroller.addEventListener('scroll', () => updateTableOverflow(scroller), {
-              passive: true,
-            })
+            setOwned(scroller, 'data-dshr-table-bound', 'true')
+            const onScroll = () => updateTableOverflow(scroller)
+            scroller.addEventListener('scroll', onScroll, { passive: true })
+            // The listener is remembered so that it can be taken off
+            // again: a scroller that outlives the plugin would keep
+            // measuring a table nobody is showing.
+            state.scrollers.set(scroller, onScroll)
           }
           updateTableOverflow(scroller)
         }
@@ -2278,8 +2505,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        */
       function updateTableOverflow(scroller) {
         const more = scroller.scrollWidth - scroller.scrollLeft - scroller.clientWidth > 2
-        if (more) scroller.setAttribute(TABLE_OVERFLOW_ATTR, '')
-        else scroller.removeAttribute(TABLE_OVERFLOW_ATTR)
+        if (more) setOwned(scroller, TABLE_OVERFLOW_ATTR, '')
+        else releaseOwned(scroller, TABLE_OVERFLOW_ATTR)
       }
 
       /**
@@ -2301,7 +2528,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
           if (rect.width === 0 || rect.height === 0) continue
           if (rect.width > 64 || rect.height > 64) continue
           if (rect.right < width * 0.6 || rect.top < height * 0.5) continue
-          el.setAttribute(FLOAT_ATTR, '')
+          setOwned(el, FLOAT_ATTR, '')
         }
       }
 
@@ -2337,22 +2564,16 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const toggle = document.querySelector(A.sidebarToggle)
         if (!(toggle instanceof HTMLElement)) return
         if (hidden) {
-          if (!state.toggleTabIndexSaved) {
-            state.toggleTabIndexSaved = true
-            state.toggleTabIndex = toggle.getAttribute('tabindex') ?? ''
-          }
           // A hidden element that still holds the focus is a focus that
           // nobody can see: the keyboard would be on a control the reader
           // does not announce.
           if (document.activeElement === toggle) toggle.blur()
-          toggle.setAttribute('aria-hidden', 'true')
-          toggle.setAttribute('tabindex', '-1')
+          setOwned(toggle, 'aria-hidden', 'true')
+          setOwned(toggle, 'tabindex', '-1')
           return
         }
-        toggle.removeAttribute('aria-hidden')
-        if (!state.toggleTabIndexSaved) return
-        if (state.toggleTabIndex === '') toggle.removeAttribute('tabindex')
-        else toggle.setAttribute('tabindex', state.toggleTabIndex)
+        releaseOwned(toggle, 'aria-hidden')
+        releaseOwned(toggle, 'tabindex')
       }
 
       /**
@@ -2370,8 +2591,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const tabs = ensureToggle(TABS_TOGGLE_ATTR, tabsOpen ? CHEVRON_UP : CHEVRON_DOWN,
           tabsOpen ? state.t('tabs.close') : state.t('tabs.open'), () => {
             const open = root.getAttribute(TABS_OPEN_ATTR) === 'open'
-            if (open) root.removeAttribute(TABS_OPEN_ATTR)
-            else root.setAttribute(TABS_OPEN_ATTR, 'open')
+            if (open) releaseOwned(root, TABS_OPEN_ATTR)
+            else setOwned(root, TABS_OPEN_ATTR, 'open')
             sync(state.mode)
           })
         const hasTabs = document.querySelector(A.conversationTabs) !== null
@@ -2394,8 +2615,8 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (phone && inSession) {
           ensureUsage(state.t, sheetOpen, () => {
             const open = root.getAttribute(SHEET_OPEN_ATTR) === 'open'
-            if (open) root.removeAttribute(SHEET_OPEN_ATTR)
-            else root.setAttribute(SHEET_OPEN_ATTR, 'open')
+            if (open) releaseOwned(root, SHEET_OPEN_ATTR)
+            else setOwned(root, SHEET_OPEN_ATTR, 'open')
             sync(state.mode)
           })
         }
@@ -2414,26 +2635,26 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         const dock = document.querySelector(A.composerDock)
         if (dock === null) return
         if (open) {
-          dock.setAttribute('role', 'dialog')
-          dock.setAttribute('aria-modal', 'true')
-          dock.setAttribute('aria-label', state.t('usage.sheet'))
+          setOwned(dock, 'role', 'dialog')
+          setOwned(dock, 'aria-modal', 'true')
+          setOwned(dock, 'aria-label', state.t('usage.sheet'))
           // The dialog takes the focus itself. Its controls are upstream
           // elements, and the plugin may only query the anchors in its
           // manifest — so the sheet is the focus target, which is what a
           // modal dialog is expected to do anyway.
           if (!dock.hasAttribute('tabindex')) {
-            dock.setAttribute('tabindex', '-1')
-            dock.setAttribute(FOCUS_HOST_ATTR, '')
+            setOwned(dock, 'tabindex', '-1')
+            setOwned(dock, FOCUS_HOST_ATTR, '')
           }
           dock.focus({ preventScroll: true })
           return
         }
-        dock.removeAttribute('role')
-        dock.removeAttribute('aria-modal')
-        dock.removeAttribute('aria-label')
+        releaseOwned(dock, 'role')
+        releaseOwned(dock, 'aria-modal')
+        releaseOwned(dock, 'aria-label')
         if (dock.hasAttribute(FOCUS_HOST_ATTR)) {
-          dock.removeAttribute(FOCUS_HOST_ATTR)
-          dock.removeAttribute('tabindex')
+          releaseOwned(dock, FOCUS_HOST_ATTR)
+          releaseOwned(dock, 'tabindex')
         }
       }
 
@@ -2627,7 +2848,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * Close the usage sheet.
        */
       function closeSheet() {
-        document.documentElement.removeAttribute(SHEET_OPEN_ATTR)
+        releaseOwned(document.documentElement, SHEET_OPEN_ATTR)
         sync(state.mode)
       }
 
@@ -2702,7 +2923,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (event.key !== 'Escape') return
         if (document.documentElement.getAttribute(ACTIONS_OPEN_ATTR) === 'open') {
           event.preventDefault()
-          document.documentElement.removeAttribute(ACTIONS_OPEN_ATTR)
+          releaseOwned(document.documentElement, ACTIONS_OPEN_ATTR)
           sync(state.mode)
           return
         }
@@ -2732,12 +2953,24 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       window.addEventListener('orientationchange', onResize)
       // The keyboard closes after the field gives up the focus, and the
       // visual viewport only reports the restored size a moment later.
-      document.addEventListener('focusout', () => {
-        window.setTimeout(() => {
+      //
+      // The handler is named so that the disposer can take it off again: a
+      // listener left behind would keep this plugin measuring a document it
+      // no longer owns, and every measurement would rewrite the page.
+      const onFocusOut = () => {
+        // One timer, not one per event: the keyboard closes and opens, and
+        // each focus change would otherwise queue its own measurement.
+        if (state.focusOutTimer !== null) window.clearTimeout(state.focusOutTimer)
+        state.focusOutTimer = window.setTimeout(() => {
+          state.focusOutTimer = null
+          // The plugin may have been unloaded in the meantime, and a
+          // plugin that is gone must not write to the page any more.
+          if (state.disposed) return
           syncViewport()
           sync()
         }, 120)
-      }, true)
+      }
+      document.addEventListener('focusout', onFocusOut, true)
       document.addEventListener('keydown', onKeyDown, true)
       document.addEventListener('pointerdown', onDocumentPointerDown, true)
       document.addEventListener('keydown', onTab, true)
@@ -2793,6 +3026,19 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         })
       }
 
+      // The title row's own size: a change in it is not a mutation in the
+      // page's tree, so the tree observer never hears about it.
+      let headerObserver = null
+      if (typeof ResizeObserver !== 'undefined') {
+        headerObserver = new ResizeObserver(() => {
+          try {
+            syncHeaderCentre()
+          } catch (error) {
+            console.error(`[${STYLE_KEY}] the layout sync failed.`, error)
+          }
+        })
+      }
+
       function watchFrame() {
         const el = frame()
         if (el === null) return false
@@ -2840,6 +3086,27 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         // web view does not always say when it changed. Measuring again
         // costs nothing and lets a stale number correct itself.
         syncViewport()
+        // The elements the host has thrown away are let go here: their
+        // records, and the listeners on them, would otherwise be kept for
+        // as long as the plugin lives.
+        pruneOwned()
+        // The title row's height follows its content, and a change in it
+        // does not always come with a mutation to notice: a web font that
+        // arrives late, a stylesheet that reflows, a title that wraps.
+        // Measuring again puts the floating controls back on the row's
+        // centre line instead of leaving them where the row used to be.
+        // The browser says so itself where the size observer exists —
+        // measuring here every second would force a reflow on a phone —
+        // so this is only the fallback for where it does not.
+        if (headerObserver === null) {
+          syncHeaderCentre()
+        } else if (state.headerRow !== null && !state.headerRow.isConnected) {
+          // A row the host has thrown away must not be kept alive by the
+          // observer: nothing else will report its removal.
+          headerObserver.unobserve(state.headerRow)
+          state.headerRow = null
+          releaseOwnedStyle(document.documentElement, '--dsh-header-centre')
+        }
       }, VERIFY_INTERVAL_MS)
 
       return () => {
@@ -2847,12 +3114,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (state.rafHandle !== null) cancelAnimationFrame(state.rafHandle)
         clearTimeout(bootTimer)
         clearInterval(verifyTimer)
+        if (state.focusOutTimer !== null) window.clearTimeout(state.focusOutTimer)
         window.removeEventListener('resize', onResize)
         window.removeEventListener('orientationchange', onResize)
         document.removeEventListener('keydown', onKeyDown, true)
         document.removeEventListener('pointerdown', onDocumentPointerDown, true)
         document.removeEventListener('keydown', onTab, true)
         document.removeEventListener('pointerdown', onPointerDown, true)
+        document.removeEventListener('focusout', onFocusOut, true)
         if (visualViewport !== undefined && visualViewport !== null) {
           visualViewport.removeEventListener('resize', onResize)
           visualViewport.removeEventListener('scroll', onResize)
@@ -2861,6 +3130,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         stopWatchingActions()
         bodyObserver.disconnect()
         if (resizeObserver !== null) resizeObserver.disconnect()
+        if (headerObserver !== null) headerObserver.disconnect()
         if (state.panelObserver !== null) state.panelObserver.disconnect()
         if (state.conversationObserver !== null) state.conversationObserver.disconnect()
         if (state.scrim !== null) state.scrim.remove()
@@ -2873,18 +3143,28 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
         if (state.actionStrip !== null && state.actionStrip !== undefined) {
           state.actionStrip.remove()
         }
-        document.documentElement.style.removeProperty('--dsh-actions-extra')
+        // The table scrollers keep their scroll listener only for as long
+        // as the plugin is watching them.
+        for (const [scroller, onScroll] of state.scrollers) {
+          scroller.removeEventListener('scroll', onScroll)
+        }
+        state.scrollers.clear()
         if (state.sheetBackdrop !== null) state.sheetBackdrop.remove()
-        document.documentElement.removeAttribute(ROOT_MODE_ATTR)
-        document.documentElement.removeAttribute(MISSING_ATTR)
-        document.documentElement.removeAttribute(PROBLEM_ATTR)
+        // Everything the plugin wrote on upstream's own elements goes back
+        // to what it was: the markers it added, the `inert` it put on the
+        // columns, the dialog semantics it gave the composer's dock, the
+        // styles it published on the root.
+        // The frame is found while the markers are still on it: the
+        // restore below takes the plugin's own `data-dsh-region` back off,
+        // and a host that does not carry the sidebar's root would then be
+        // unfindable, leaving React's grid un-restored.
         const el = frame()
-        if (el !== null) {
-          el.removeAttribute(DRAWER_ATTR)
-          el.removeAttribute('inert')
-          if (state.writtenGrid !== null && state.lastReactGrid !== null) {
-            el.style.setProperty('grid-template-columns', state.lastReactGrid)
-          }
+        releaseOwnedAll()
+        // The grid is the one write that does not go through the registry,
+        // on purpose (ADR-2): React only rewrites a style it has seen
+        // change, so the value it wrote has to be put back, not cleared.
+        if (el !== null && state.writtenGrid !== null && state.lastReactGrid !== null) {
+          el.style.setProperty('grid-template-columns', state.lastReactGrid)
         }
         style.remove()
       }

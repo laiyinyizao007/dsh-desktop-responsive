@@ -3,7 +3,7 @@
 // The contract is read out of files — the plugin's source, the upstream's
 // source, the patches — so this test needs the file system and not a DOM.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -52,19 +52,82 @@ const UPSTREAM_FILES = {
 }
 
 /** The patch file that carries the markers of one upstream package. */
-function patchFile(pkg) {
-  return join(repoRoot, 'patches', `${pkg.replace('/', '+')}+0.2.1-rc.3.patch`)
-}
-
 /** Read one installed upstream file. */
 async function upstreamSource(pkg) {
   return readFile(join(repoRoot, 'node_modules', pkg, UPSTREAM_FILES[pkg]), 'utf8')
 }
 
-/** The marker value an anchor selector carries, e.g. `layout` → `layout`. */
-function markerValue(selector) {
-  const match = /\[data-dsh-region=["']([^"']+)["']\]/.exec(selector)
-  return match === null ? null : match[1]
+/**
+ * The markers the plugin's own patches do not carry.
+ *
+ * The published upstream carries no `data-dsh-*` attribute at all — that
+ * was checked against the tarballs — so a marker is never the upstream's.
+ * It is one of three things: a patch in `patches/` adds it, the plugin
+ * adds it to an element it has already found, or the host's build adds
+ * it. The DSH Desktop's build patches the upstream's sidebar package to
+ * carry the sidebar's root and its toggle.
+ *
+ * The plugin's own markings are matched loosely: a pattern rather than a
+ * line of source, so that reformatting the file does not fail a test
+ * about where a marker comes from.
+ */
+const PLUGIN_MARKED = {
+  frame: /setMarker\(\s*\w+\s*,\s*A\.frame\s*\)/,
+  sidebar: /setMarker\(\s*\w+\s*,\s*A\.sidebar\s*\)/,
+  center: /setMarker\(\s*\w+\s*,\s*A\.center\s*\)/,
+}
+
+const HOST_MARKED = ['sidebarRoot', 'sidebarToggle']
+
+/**
+ * Every patch of this repository.
+ *
+ * The file name carries the upstream version, which moves; the package it
+ * belongs to does not. So the patches are found by the directory rather
+ * than by a list that goes stale. A list, not a map: two files for one
+ * package — an old file left behind after a patch was regenerated for a
+ * new upstream version — must both be examined, not have the newer one
+ * hide the older.
+ */
+async function readPatches() {
+  const dir = join(repoRoot, 'patches')
+  const files = []
+  for (const name of await readdir(dir)) {
+    if (!name.endsWith('.patch')) continue
+    const stem = name.replace(/\.patch$/, '')
+    const cut = stem.lastIndexOf('+')
+    files.push({
+      pkg: stem.slice(0, cut).replace('+', '/'),
+      version: stem.slice(cut + 1),
+      file: join(dir, name),
+      source: await readFile(join(dir, name), 'utf8'),
+    })
+  }
+  return files
+}
+
+/**
+ * Whether a patch adds a marker.
+ *
+ * Only the added lines count: a patch that removes a marker carries the
+ * name in its removed lines too, and that is the opposite of carrying it.
+ * The patches add the marker as an attribute of the upstream's own
+ * elements, so the attribute name is in the added lines, and for a region
+ * marker so is its value.
+ */
+function patchCarriesMarker(patch, anchor) {
+  const match = /^\[([a-z-]+)(?:=["']([^"']+)["'])?\]$/.exec(anchor.selector)
+  if (match === null) return false
+  const [, attribute, value] = match
+  const added = patch
+    .split('\n')
+    .filter(line => line.startsWith('+') && !line.startsWith('+++'))
+  // The attribute and its value have to be on one line: a patch that adds
+  // another region marker and mentions this marker's value somewhere else
+  // is not carrying this marker.
+  return added.some(
+    line => line.includes(attribute) && (value === undefined || line.includes(`"${value}"`))
+  )
 }
 
 /** Strip comments so a hashed class name in prose is not read as a selector. */
@@ -137,15 +200,14 @@ describe('the anchor manifest', () => {
   })
 
   it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-layout'))(
-    'has every anchor present in the installed upstream source', async () => {
+    'finds every attribute anchor in the installed upstream source', async () => {
     for (const [key, anchor] of Object.entries(anchors)) {
       if (anchor.optional === true) continue
+      // A marker is never the upstream's: the published packages carry no
+      // `data-dsh-*` attribute at all. Where each marker comes from is
+      // the subject of the next test.
+      if (anchor.origin === 'marker') continue
       const source = await upstreamSource(anchor.package)
-      if (anchor.origin === 'marker') {
-        const marker = markerValue(anchor.selector)
-        expect(source, `${anchor.package} does not carry ${key}`).toContain(`"${marker}"`)
-        continue
-      }
       if (anchor.origin === 'element') {
         // A semantic element name — `table`, `button` — has no upstream
         // class name to rehash, so the element itself is the contract.
@@ -172,14 +234,56 @@ describe('the anchor manifest', () => {
     }
   })
 
+  it('gives every marker anchor a source', async () => {
+    // This one runs whether or not the upstream is installed: it reads
+    // the repository's own patches and the plugin's own source, and it
+    // is the check that catches a marker nothing provides — the plugin
+    // would then quietly stop adapting that surface, which is the
+    // failure this whole file exists for.
+    const patches = await readPatches()
+    const clientSource = await readFile(clientPath, 'utf8')
+    for (const [key, anchor] of Object.entries(anchors)) {
+      if (anchor.origin !== 'marker') continue
+      if (key in PLUGIN_MARKED) {
+        // The plugin marks these itself, on the grid it found.
+        expect(clientSource, `the plugin does not mark ${key}`).toMatch(PLUGIN_MARKED[key])
+        continue
+      }
+      if (HOST_MARKED.includes(key)) {
+        // The host's build carries it. This repository's patches must not
+        // start to: the host is the one that knows where its own sidebar
+        // lives, and a patch that guessed would pin the host to a guess.
+        for (const patch of patches) {
+          expect(
+            patchCarriesMarker(patch.source, anchor),
+            `the patch for ${patch.pkg} carries ${key}, which the host provides`
+          ).toBe(false)
+        }
+        continue
+      }
+      const patch = patches.find(item => item.pkg === anchor.package)
+      expect(patch, `${key} names a package this repository has no patch for`).toBeTruthy()
+      expect(
+        patchCarriesMarker(patch.source, anchor),
+        `no patch carries ${key}`
+      ).toBe(true)
+    }
+  })
+
   it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-layout'))(
     'carries every marker anchor in the patch of its package', async () => {
+      const patches = await readPatches()
       for (const [key, anchor] of Object.entries(anchors)) {
         if (anchor.origin !== 'marker') continue
-        const marker = markerValue(anchor.selector)
-        expect(marker, `${key} has no marker value`).toBeTruthy()
-        const patch = await readFile(patchFile(anchor.package), 'utf8')
-        expect(patch, `no patch carries ${key}`).toContain(`"${marker}"`)
+        // The plugin's own and the host's markers are not in a patch, and
+        // the test above says where they come from.
+        if (key in PLUGIN_MARKED || HOST_MARKED.includes(key)) continue
+        const patch = patches.find(item => item.pkg === anchor.package)
+        if (patch === undefined) continue
+        expect(
+          patchCarriesMarker(patch.source, anchor),
+          `the patch for ${anchor.package} does not carry ${key}`
+        ).toBe(true)
       }
     })
 })
@@ -293,22 +397,20 @@ describe('the upstream patches', () => {
     // patch-package applies a patch whose file name carries another
     // version, but only with a warning. Renaming the file is mechanical,
     // so the drift is caught here instead of in a build log.
-    const anchors = await loadManifest()
-    const packages = new Set(
-      Object.values(anchors)
-        .filter(anchor => anchor.optional !== true)
-        .map(anchor => anchor.package)
-    )
-    for (const pkg of packages) {
+    //
+    // Only the packages this repository actually patches are checked: the
+    // manifest names more packages than that — the sidebar's own root is
+    // an anchor, but the sidebar package is not patched here.
+    const patches = await readPatches()
+    for (const patch of patches) {
+      if (!upstreamInstalled(patch.pkg)) continue
       const manifest = JSON.parse(
-        await readFile(join(repoRoot, 'node_modules', pkg, 'package.json'), 'utf8')
+        await readFile(join(repoRoot, 'node_modules', patch.pkg, 'package.json'), 'utf8')
       )
-      const file = join(
-        repoRoot,
-        'patches',
-        `${pkg.replace('/', '+')}+${manifest.version}.patch`
-      )
-      await expect(readFile(file, 'utf8'), `${pkg} has no patch for ${manifest.version}`).resolves.toBeTruthy()
+      expect(
+        patch.version,
+        `${patch.pkg} is installed at ${manifest.version}, but ${patch.file.split(/[\\/]/).pop()} is named for ${patch.version}`
+      ).toBe(manifest.version)
     }
   })
 })

@@ -15,6 +15,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * the body immediately and keeps the disposer.
  */
 
+/**
+ * Every plugin instance this file has created.
+ *
+ * A plugin that is not unloaded keeps watching the document: its timers
+ * keep running, its observers keep firing, and it keeps measuring the page
+ * the next test has just built. The instances are therefore all unloaded
+ * together after every test, not only the one the test itself activated.
+ */
+const instances = []
+
 /** Load the client plugin and activate it. */
 async function activatePlugin() {
   let captured = null
@@ -56,14 +66,19 @@ async function activatePlugin() {
       },
     },
   })
-  return {
+  let unloaded = false
+  const instance = {
     anchors: exports.anchors,
     phoneMax: exports.phoneMax,
     services,
     dispose() {
+      if (unloaded) return
+      unloaded = true
       for (const dispose of disposers.reverse()) dispose?.()
     },
   }
+  instances.push(instance)
+  return instance
 }
 
 /**
@@ -267,7 +282,12 @@ describe('dsh-desktop-responsive client', () => {
   })
 
   afterEach(() => {
-    plugin?.dispose()
+    // Every instance the file created is unloaded here, not only the one
+    // this test activated: an instance left running keeps its timers and
+    // its observers, and would go on measuring the page the next test has
+    // just built. That is what makes a test here slow, and what makes it
+    // fail for reasons that have nothing to do with what it asserts.
+    for (const instance of instances.splice(0)) instance.dispose()
     document.body.innerHTML = ''
     document.documentElement.removeAttribute('data-dshr-mode')
     document.documentElement.removeAttribute('data-dshr-missing')
@@ -845,14 +865,22 @@ describe('dsh-desktop-responsive client', () => {
     const conversation = document.querySelector('[data-conversation-content]')
     const table = document.createElement('table')
     conversation.appendChild(table)
-    await flush()
     const scroller = table.parentElement
     // jsdom does no layout, so the sizes are declared rather than measured.
+    //
+    // They have to be declared before the first flush, not after it: the
+    // plugin measures the table when it syncs, and it syns on the mutation
+    // that put the table on the page. A size declared after that sync
+    // would only be picked up by whatever else happened to sync later — a
+    // resize, another mutation, the layout's own timer — so the assertion
+    // would be a race rather than a measurement.
     Object.defineProperty(scroller, 'scrollWidth', { value: 640, configurable: true })
     Object.defineProperty(scroller, 'clientWidth', { value: 350, configurable: true })
     Object.defineProperty(scroller, 'scrollLeft', { value: 0, writable: true, configurable: true })
     await flush()
     expect(scroller.hasAttribute('data-dshr-overflow')).toBe(true)
+    // Scrolling to the end takes the hint away again: it points at the
+    // columns that are still out of reach, and there are none left.
     scroller.scrollLeft = 290
     scroller.dispatchEvent(new window.Event('scroll'))
     await flush()
@@ -929,8 +957,35 @@ describe('dsh-desktop-responsive client', () => {
     // The row's height follows its content, so the controls are measured
     // against it rather than pinned to a fixed offset.
     row.getBoundingClientRect = () => ({ y: 10, height: 34, top: 10, bottom: 44, width: 280, left: 20, right: 300 })
+    // The plugin publishes the centre when it syncs, and a resize is what
+    // asks it to sync. Waiting for something else to change the page would
+    // make the assertion a race rather than a measurement.
+    window.dispatchEvent(new window.Event('resize'))
     await flush()
     expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
+  })
+
+  it('re-measures the title row when its height changes on its own', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    const center = document.querySelector('[data-dsh-region="conversation-header"]')
+    const row = document.createElement('div')
+    row.setAttribute('data-dsh-region', 'conversation-title-row')
+    center.appendChild(row)
+    await flush()
+    let height = 34
+    row.getBoundingClientRect = () => ({ y: 10, height, top: 10, bottom: 10 + height, width: 280, left: 20, right: 300 })
+    window.dispatchEvent(new window.Event('resize'))
+    await flush()
+    expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
+    // A taller row — a web font that arrived late, a title that wrapped —
+    // is not a change in the page's structure, so nothing asks the
+    // plugin to sync. The number has to correct itself, or the floating
+    // controls sit off the title's centre line until something else
+    // happens to move.
+    height = 54
+    await vi.waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('37px')
+    }, { timeout: 4000, interval: 50 })
   })
 
   it('lets another plugin add an item to the collapsed menu', async () => {
@@ -1025,6 +1080,10 @@ describe('dsh-desktop-responsive client', () => {
     await flush()
     expect(seen).toEqual(['phone'])
     setWidth(1280)
+    // The plugin measures the frame when it syncs, and a resize is what
+    // asks it to sync. The frame's width is a measurement and not a
+    // mutation, so nothing else would make the plugin look at it again.
+    window.dispatchEvent(new window.Event('resize'))
     await flush()
     expect(seen).toEqual(['phone', 'wide'])
     stop()
@@ -1116,6 +1175,10 @@ describe('dsh-desktop-responsive client', () => {
       top: 10 + viewport.offsetTop, bottom: 44 + viewport.offsetTop,
       width: 280, left: 20, right: 300, x: 20,
     })
+    // The plugin publishes the centre when it syncs, and a resize is what
+    // asks it to sync. Waiting for something else to change the page would
+    // make the assertion a race rather than a measurement.
+    window.dispatchEvent(new window.Event('resize'))
     await flush()
     expect(document.documentElement.style.getPropertyValue('--dsh-header-centre')).toBe('27px')
 
@@ -1251,5 +1314,155 @@ describe('dsh-desktop-responsive client', () => {
     expect(document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]')).toBeNull()
     expect(document.querySelector('[data-dshr-scrim]')).toBeNull()
     expect(document.documentElement.hasAttribute('data-dshr-mode')).toBe(false)
+  })
+
+  it('leaves the host page as it found it when it is unloaded', async () => {
+    // A host that carries the sidebar's root but not the region markers:
+    // the plugin works the markers out for itself, and has to take them
+    // away again when it goes. A host's page is not left carrying a
+    // contract the plugin invented.
+    document.body.innerHTML = ''
+    const frame = document.createElement('div')
+    frame.style.setProperty('grid-template-columns', '56px minmax(400px, 1fr) minmax(0px, 0px)')
+    frame.getBoundingClientRect = () => ({
+      width: 390,
+      height: 800,
+      top: 0,
+      left: 0,
+      right: 390,
+      bottom: 800,
+      x: 0,
+      y: 0,
+    })
+    const sidebar = document.createElement('div')
+    sidebar.setAttribute('data-dsh-sidebar-root', '')
+    const column = document.createElement('div')
+    column.appendChild(sidebar)
+    const centre = document.createElement('div')
+    const chat = document.createElement('div')
+    chat.setAttribute('data-conversation-region', 'chat')
+    centre.appendChild(chat)
+    frame.appendChild(column)
+    frame.appendChild(centre)
+    document.body.appendChild(frame)
+    await flush()
+    expect(frame.getAttribute('data-dsh-region')).toBe('layout')
+    expect(column.getAttribute('data-dsh-region')).toBe('sidebar')
+    expect(centre.getAttribute('data-dsh-region')).toBe('center')
+    // The drawer is open on a phone, so the content behind it is inert.
+    expect(centre.hasAttribute('inert')).toBe(true)
+    plugin.dispose()
+    expect(frame.hasAttribute('data-dsh-region')).toBe(false)
+    expect(column.hasAttribute('data-dsh-region')).toBe(false)
+    expect(centre.hasAttribute('data-dsh-region')).toBe(false)
+    expect(centre.hasAttribute('inert')).toBe(false)
+    expect(frame.hasAttribute('data-dshr-drawer')).toBe(false)
+    // And nothing of the plugin's is left on the root either.
+    const root = document.documentElement
+    expect(root.hasAttribute('data-dshr-mode')).toBe(false)
+    expect(root.hasAttribute('data-dshr-viewport')).toBe(false)
+    expect(root.style.getPropertyValue('--dsh-visual-width')).toBe('')
+    expect(root.style.getPropertyValue('--dsh-header-centre')).toBe('')
+  })
+
+  it('takes the drift marker away when it is unloaded', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    // A surface that belongs to another plugin, with the class the plugin
+    // adapts by.
+    const console_ = document.createElement('div')
+    console_.className = 'pc-root'
+    document.body.appendChild(console_)
+    // And the stylesheet that adapts it does not take, so the plugin says
+    // so and marks the page.
+    document.querySelector('style[data-plugin-css="dsh-desktop-responsive"]').remove()
+    await flush()
+    // The check runs on the layout's own timer, and how long the first
+    // tick takes is not this test's subject — a slow machine must not
+    // fail it. Wait for the marker, not for the clock.
+    const root = document.documentElement
+    await vi.waitFor(() => {
+      expect(root.hasAttribute('data-dshr-drift')).toBe(true)
+    }, { timeout: 4000, interval: 50 })
+    plugin.dispose()
+    // The marker is the plugin's own, so it goes with the plugin: a page
+    // that keeps it would report a drift that nobody is looking for any
+    // more.
+    expect(root.hasAttribute('data-dshr-drift')).toBe(false)
+  })
+
+  it('restores what the host had written on its own element', async () => {
+    const { center } = buildFrame({ width: 390 })
+    // The host carries an inert of its own on the centre column — its own
+    // modal, say — before the plugin ever writes on it.
+    center.setAttribute('inert', '')
+    await flush()
+    // The drawer is open, so the column now carries the plugin's inert,
+    // and the value is the plugin's own so it can be told apart later.
+    expect(center.getAttribute('inert')).toBe('dshr')
+    plugin.dispose()
+    // What comes back is the host's value, not an absence: the host's
+    // modal must still be inert after the plugin leaves.
+    expect(center.hasAttribute('inert')).toBe(true)
+    expect(center.getAttribute('inert')).toBe('')
+  })
+
+  it('puts back the exact value the host had on the attribute', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    const toggle = document.querySelector('[data-dsh-region="sidebar-toggle"]')
+    // The rail's toggle carries a tabindex of its own.
+    toggle.setAttribute('tabindex', '0')
+    await flush()
+    // With the drawer closed the stand-in takes the toggle out of the
+    // tree order.
+    expect(toggle.getAttribute('tabindex')).toBe('-1')
+    plugin.dispose()
+    expect(toggle.getAttribute('tabindex')).toBe('0')
+  })
+
+  it('leaves a value the host wrote while the plugin held the attribute', async () => {
+    buildFrame({ width: 390, collapsed: true })
+    await flush()
+    const toggle = document.querySelector('[data-dsh-region="sidebar-toggle"]')
+    // With the drawer closed the toggle carries the plugin's stand-in
+    // values.
+    expect(toggle.getAttribute('tabindex')).toBe('-1')
+    // The host writes its own tabindex while the plugin holds the
+    // attribute — and the plugin is unloaded before it syncs again.
+    // Nothing in between observes the write: the body observer watches
+    // only new children, and the root observer watches only the
+    // attributes React owns.
+    toggle.setAttribute('tabindex', '2')
+    plugin.dispose()
+    // The host's newer value is not the plugin's to undo.
+    expect(toggle.getAttribute('tabindex')).toBe('2')
+    // The attribute the host never touched is still put back.
+    expect(toggle.hasAttribute('aria-hidden')).toBe(false)
+  })
+
+  it('lets go of a surface the host threw away, and writes on it again if it comes back', async () => {
+    const { frame } = buildFrame({ width: 390 })
+    const conversation = document.querySelector('[data-conversation-content]')
+    // A table in a scroller of its own, the way the host lays tables out.
+    const holder = document.createElement('div')
+    const table = document.createElement('table')
+    holder.appendChild(table)
+    conversation.appendChild(holder)
+    await flush()
+    expect(holder.getAttribute('data-dshr-table-scroll')).toBe('')
+    // The host throws the surface away.
+    holder.remove()
+    // Two prune passes, one second apart, decide it is gone for good.
+    await vi.waitFor(() => {
+      expect(holder.hasAttribute('data-dshr-table-scroll')).toBe(false)
+    }, { timeout: 4000, interval: 50 })
+    // If the host mounts it again, the plugin writes on it again — a
+    // re-render puts the table back, and the sync that follows finds the
+    // surface by asking the document.
+    conversation.appendChild(holder)
+    frame.style.setProperty('grid-template-columns', '56px minmax(400px, 1fr) minmax(0px, 0px)')
+    await flush()
+    expect(holder.getAttribute('data-dshr-table-scroll')).toBe('')
+    plugin.dispose()
+    expect(holder.hasAttribute('data-dshr-table-scroll')).toBe(false)
   })
 })
