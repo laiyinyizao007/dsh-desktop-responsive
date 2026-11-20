@@ -36,6 +36,12 @@
     "url": "https://github.com/laiyinyizao007/dsh-desktop-responsive/issues"
   },
   "homepage": "https://github.com/laiyinyizao007/dsh-desktop-responsive#readme",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-locale": "^0.2.1-rc.1 || >=0.2.2-rc.1 <0.3.0-0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"

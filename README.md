@@ -28,21 +28,34 @@ unloaded.
 
 ## Install
 
-The plugin is a plain DSH plugin. Put it in the profile's plugins and
-restart the Harness:
+The plugin is a plain DSH plugin. Install it into a profile and restart
+the Harness:
 
 ```bash
-cd ~/.dsh/profiles/web/node_modules
-npm install dsh-desktop-responsive
-```
+# from npm
+dsh plugin --profile web add dsh-desktop-responsive
 
-or, from a checkout:
+# from GitHub
+dsh plugin --profile web add github:laiyinyizao007/dsh-desktop-responsive
 
-```bash
-npm install /path/to/dsh-desktop-responsive
+# from a local checkout
+dsh plugin --profile web add /path/to/dsh-desktop-responsive
 ```
 
 Nothing else is needed: the plugin finds the layout by itself.
+
+`dsh plugin` forwards to `pnpm` in the profile directory, so the profile's
+own `pnpm-workspace.yaml` decides how the install runs. The plugin has no
+runtime dependencies; it declares `@deepseek-ai/dsh-client-locale` as a peer
+because that is the package that provides the `locale` service it registers
+its own strings with, and the Harness already ships it.
+
+The peer range carries an explicit prerelease branch on purpose. The
+Harness is published as prereleases, and node-semver only lets a
+prerelease satisfy a range when some comparator in that range shares the
+version's exact `major.minor.patch` tuple and itself carries a prerelease
+tag — so a range written as `>=0.2.1-rc.1 <0.3.0` would silently exclude
+every `0.2.2-rc.*` build.
 
 ### Building the host from source
 
