@@ -487,6 +487,8 @@ plugin binds only to the anchors listed in `ANCHORS` in `client.js`:
 | `settingsOptions` | `[data-dsh-region="settings-options"]` | marker | `dsh-client-ui-settings-general` |
 | `settingsFooter` | `[data-dsh-settings-sidebar-footer]` | marker | `dsh-client-ui-settings-general` |
 
+The `sidebarToggle` marker is optional. A host that does not carry it — the DSH Desktop build marks only `[data-dsh-sidebar-root]` — still gets a drawer: `sidebarToggle()` then takes the last button of the root's first row, which is where the upstream renders the toggle (alone in a strip on macOS, after the brand elsewhere). It keeps that element while it stays in the document, so what the plugin hides is what it restores, and it gives up and logs when the row holds more than two buttons rather than click an unknown one. The contract test checks the upstream still renders the row that way.
+
 A *marker* anchor is a `data-dsh-*` attribute the host adds: mostly a
 `data-dsh-region`, and in two cases a name of its own — the sidebar's
 root and the settings footer's slot. A host that builds upstream from

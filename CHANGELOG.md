@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-21
+
+### Fixed（修复）
+
+- **手机宽度下侧栏抽屉在 DSH Desktop 上打不开。** 插件靠 `[data-dsh-region="sidebar-toggle"]` 找上游的侧栏切换键，而 DSH Desktop 的构建只标了侧栏根（`data-dsh-sidebar-root`），没标切换键：菜单按钮点了没反应，侧栏一直折叠，会话列表和挂在会话行上的其他插件控件（如 dsh-notify-me 的铃铛）都够不到。该锚点不在自检范围内，失效时只在控制台留一行。现在先找标记，找不到就取侧栏根第一行里的最后一个按钮：macOS 上那一行只有切换键，其他平台是「品牌、切换键」，而侧栏展开时品牌本身也是一个按钮（点了会新建会话），所以不能取第一个。切换键的名字随语言翻译、类名是哈希，位置是唯一稳定的特征，且只在已标记的根里取。找到的元素会被记住（只要它还在文档里），所以插件藏起的和卸载时还原的是同一个按钮；那一行出现两个以上按钮（未知布局）时宁可不点、在控制台说明。新增契约测试，读上游 sidebar 源码确认这一行的结构没变。（#5）
+
+### Documentation（文档）
+
+- README 新增「Opening it on a phone」：局域网、Tailscale、隧道/反向代理三种到达方式，`--host` 必须绑定具体地址（拒绝 `0.0.0.0`），非回环且非绑定地址的名字要加 `--trusted-host`（DSH Desktop 上对应 profile 补丁里 `connection` 条目的 `trustedHosts`），首次访问要带 `?token=`，并说明从聊天 App 或相机预览打开可能存不住登录 cookie。
+- `sidebar-toggle` 标记改记为可选（README、`docs/UPSTREAM.md`、`docs/DETAIL.md`、PROJECTWIKI 技术债表优先级 高→中）。
+
 ## [0.2.0] - 2026-11-20
 
 首个发布版本。仓库此前从未发布到 npm 或任何 DSH 插件目录。
@@ -50,5 +61,6 @@
 - "从不按类名选择"改为"从不按哈希类名选择"：三个可选锚点用的是别的插件自己的语义类名（`.pc-root`、`.pc-rail-item`、`.dshWbMarketHeaderText`），对方改名时那一条适配会停，插件会报出来，其余照常。
 
 <!-- 比对链接 -->
-[Unreleased]: https://github.com/laiyinyizao007/dsh-desktop-responsive/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/laiyinyizao007/dsh-desktop-responsive/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/laiyinyizao007/dsh-desktop-responsive/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/laiyinyizao007/dsh-desktop-responsive/releases/tag/v0.2.0

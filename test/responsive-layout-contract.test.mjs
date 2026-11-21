@@ -65,7 +65,8 @@ async function upstreamSource(pkg) {
  * It is one of three things: a patch in `patches/` adds it, the plugin
  * adds it to an element it has already found, or the host's build adds
  * it. The DSH Desktop's build patches the upstream's sidebar package to
- * carry the sidebar's root and its toggle.
+ * carry the sidebar's root — not its toggle, which the plugin then finds
+ * by its place in the root's first row (see the sidebar row test below).
  *
  * The plugin's own markings are matched loosely: a pattern rather than a
  * line of source, so that reformatting the file does not fail a test
@@ -374,6 +375,26 @@ describe('the plugin source', () => {
 })
 
 describe("the plugin's own dictionary", () => {
+  it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-sidebar'))(
+    'finds the sidebar toggle where the plugin looks for it on a host without the marker',
+    async () => {
+      // Without the toggle's marker the plugin takes the last button of the
+      // sidebar root's first row. That holds only while the upstream puts
+      // the toggle there: alone in a strip on macOS, and after the brand —
+      // a button that starts a new session — everywhere else. If either
+      // changes, the plugin would click the wrong control.
+      const source = await upstreamSource('@deepseek-ai/dsh-client-ui-sidebar')
+      // On macOS the root's first child is a strip holding the toggle alone.
+      expect(source).toMatch(
+        /children: \[\s*darwinDesktop && \(0, react_jsx_runtime\.jsx\)\("div", \{[\s\S]{0,200}children: toggle/
+      )
+      // Elsewhere the first row is the brand (new session), then the toggle.
+      expect(source).toMatch(
+        /onClick: openNewSession[\s\S]{0,400}\}\)\s*;?\s*\}\)\(\),\s*!darwinDesktop && toggle\]/
+      )
+    }
+  )
+
   it.skipIf(!upstreamInstalled('@deepseek-ai/dsh-client-ui-model-selection'))('names the model menu the way upstream names it', async () => {
     // The plugin finds the model menu by the name upstream gives it, so the
     // two dictionaries have to agree. Upstream ships its strings inside its

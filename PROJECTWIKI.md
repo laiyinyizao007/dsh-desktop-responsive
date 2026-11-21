@@ -82,7 +82,7 @@ flowchart TD
 | --- | --- | --- |
 | 可选锚点仍用语义类名（`.pc-root`、`.dshWbMarketHeaderText`） | 中 | 属第三方插件的私有实现，对方改名即失效；已标 `optional`，失效只记诊断 |
 | 无截图 | 低 | 目录条目在仓库里声明 `screenshots.json` 后市场才能展示 App Store 式截图 |
-| `patches/` 不含 sidebar 包的两个标记 | 高 | `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"` 不在补丁里，从源码构建的宿主必须自己补，否则插件找不到 frame；DSH Desktop 的构建自带前者，纯 npm 的 web profile 两者都没有 |
+| `patches/` 不含 sidebar 包的两个标记 | 中 | `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"` 不在补丁里，从源码构建的宿主必须自己补前者，否则插件找不到 frame；DSH Desktop 的构建自带前者。后者自 0.2.1 起可缺：插件退回到侧栏根第一行里的最后一个按钮（上游把切换键放在那一行末尾；宽屏时它前面还有一个「新会话」品牌按钮）。0.2.0 在 DSH Desktop 上手机抽屉因此打不开（#5） |
 | 无图标 | 低 | 目录条目不写 `icon:` 时回退到作者头像 |
 | 上游补丁绑定 `0.2.1-rc.3` | 中 | 上游升版需重新生成补丁（`docs/UPSTREAM.md` 有流程） |
 | 动作按钮的图标串直接 `innerHTML` 写入 | 低 | `registerAction` 传进来的 `action.icon` 不消毒就插入 DOM；同一 profile 里的插件本来就在同一执行环境、彼此同权，消毒挡不住真正的越权，故不做；若未来引入跨信任来源的注册（如远程插件市场）须先补 |
@@ -107,14 +107,14 @@ flowchart TD
 - **关键常量**：`PHONE_MAX = 640`（断点）、`NS = 'desktop-responsive'`（文案命名空间）、`ACTION_STRIP_MAX_PX = 232`。
 - **关键数据结构**：`ANCHORS`（锚点表）——插件唯一的定位入口；`owned`（登记表）——插件写在宿主自有元素上的每一样东西，还原的唯一依据。
 - **外部依赖**：`@deepseek-ai/dsh-client-locale`（peer，宿主提供）。
-- **测试覆盖基线**：`test/responsive-layout-client.test.mjs`（行为测试，加载进 jsdom）与 `test/responsive-layout-contract.test.mjs`（契约守卫）。共 95 条：装上上游包（`0.2.1-rc.3`）时 95 条全过；只克隆本仓库时 91 通过 / 4 跳过（跳过的四条要读上游源码，装了上游包才会跑）。
+- **测试覆盖基线**：`test/responsive-layout-client.test.mjs`（行为测试，加载进 jsdom）与 `test/responsive-layout-contract.test.mjs`（契约守卫）。共 101 条：装上上游包（`0.2.1-rc.3`）时 101 条全过；只克隆本仓库时 96 通过 / 5 跳过（跳过的四条要读上游源码，装了上游包才会跑）。
 - **风险与扩展点**：适配逻辑集中在 `install()` 内部的 `sync*()` 系列函数；新增一条适配 = 加一个锚点 + 一个 `sync*()` + 一条行为测试。
 
 ### `patches/` — 上游最小补丁
 
 - **职责**：给从源码构建的宿主补上 `data-dsh-region` 标记，共 14 个——会话表头、标题行、工作区行、视图标签、输入区底栏、已发消息栈，以及设置对话框的八个部分（含页脚槽位 `data-dsh-settings-sidebar-footer`）。
 - **内容**：三个 `patch-package` 补丁，针对 `@deepseek-ai/dsh-client-ui-chat`、`-conversation`、`-settings-general` 的 `0.2.1-rc.3`。
-- **缺口**：补丁不含 `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"`——二者属于 sidebar 包，补丁没有覆盖。插件靠前者定位 frame，从源码构建的宿主必须自己补上，否则插件整体不生效（见 `docs/UPSTREAM.md`）。DSH Desktop 自己的构建给上游 sidebar 包打了补丁、带上了 `data-dsh-sidebar-root`，所以在 Desktop 上不用管这个缺口；但它不带 `data-dsh-region`，那六个表面在 Desktop 上仍保持原样。
+- **缺口**：补丁不含 `data-dsh-sidebar-root` 与 `data-dsh-region="sidebar-toggle"`——二者属于 sidebar 包，补丁没有覆盖。插件靠前者定位 frame，从源码构建的宿主必须自己补上，否则插件整体不生效（见 `docs/UPSTREAM.md`）；后者可缺，插件用 `sidebarToggle()` 退回到侧栏根第一行里的最后一个按钮。DSH Desktop 自己的构建给上游 sidebar 包打了补丁、带上了 `data-dsh-sidebar-root`，所以在 Desktop 上不用管这个缺口；但它不带 `data-dsh-region`，那六个表面在 Desktop 上仍保持原样。
 - **约束**：只加属性，不改渲染结构。契约见 `docs/UPSTREAM.md`。
 
 ### `cordis.patch.yml` — 补丁层

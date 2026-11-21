@@ -1364,6 +1364,14 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       const state = {
         /** The plugin's translator. */
         t,
+        /**
+         * The upstream toggle as the structural fallback found it. Kept, so
+         * that whatever the plugin hides is the element it later restores;
+         * found again only once it has left the document.
+         */
+        fallbackToggle: null,
+        /** Whether an unrecognised sidebar row has been reported already. */
+        reportedToggleRow: false,
         /** The items other plugins registered for the collapsed menu. */
         registeredActions: [],
         /** The current layout mode. */
@@ -2000,6 +2008,50 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
       }
 
       /**
+       * Find the upstream sidebar toggle.
+       *
+       * The marker is the contract, and a host built with the patches has
+       * it. The DSH Desktop build marks only the sidebar's root. There the
+       * toggle is the last button of the root's first row: on macOS the row
+       * holds the toggle alone; elsewhere it holds the brand, then the
+       * toggle — and while the sidebar is wide the brand is a button too,
+       * one that starts a new session. Taking the first button would click
+       * that one whenever the drawer is closed.
+       *
+       * The toggle's name is translated and its classes are hashed, so its
+       * place is the one thing that holds. A button nested in another (a
+       * plugin's badge inside the toggle) is not a row's own button.
+       */
+      function sidebarToggle() {
+        const marked = document.querySelector(A.sidebarToggle)
+        if (marked !== null) return marked
+        if (state.fallbackToggle !== null && state.fallbackToggle.isConnected) {
+          return state.fallbackToggle
+        }
+        state.fallbackToggle = null
+        const row = document.querySelector(A.sidebarRoot)?.firstElementChild
+        if (row === null || row === undefined) return null
+        const own = [...row.querySelectorAll('button')].filter(
+          (button) => button.parentElement?.closest('button') === null
+        )
+        // The row holds the toggle, and at most the brand ahead of it. A row
+        // with more is a layout the plugin does not know: clicking its last
+        // button could start a session or open a panel, so it gives up and
+        // says so rather than guess.
+        if (own.length === 0 || own.length > 2) {
+          if (!state.reportedToggleRow) {
+            state.reportedToggleRow = true
+            console.error(
+              `[${STYLE_KEY}] cannot find the sidebar toggle: the sidebar's first row holds ${own.length} buttons, expected 1 or 2.`
+            )
+          }
+          return null
+        }
+        state.fallbackToggle = own[own.length - 1]
+        return state.fallbackToggle
+      }
+
+      /**
        * Open the drawer by telling upstream to expand the sidebar.
        *
        * The drawer is the upstream sidebar, so opening it means asking
@@ -2009,7 +2061,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * upstream's store.
        */
       function openDrawer() {
-        const toggle = document.querySelector(A.sidebarToggle)
+        const toggle = sidebarToggle()
         if (toggle === null) {
           console.error(
             `[${STYLE_KEY}] cannot open the drawer: the sidebar toggle anchor is missing.`
@@ -2041,7 +2093,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * upstream's store.
        */
       function closeDrawer() {
-        const toggle = document.querySelector(A.sidebarToggle)
+        const toggle = sidebarToggle()
         if (toggle === null) {
           console.error(
             `[${STYLE_KEY}] cannot close the drawer: the sidebar toggle anchor is missing.`
@@ -2076,7 +2128,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
             const el = document.querySelector(anchor)
             if (el !== null) setOwned(el, 'inert', INERT_OWN)
           }
-          const toggle = document.querySelector(A.sidebarToggle)
+          const toggle = sidebarToggle()
           if (toggle instanceof HTMLElement && document.activeElement !== toggle) {
             // The drawer shows the rail, and with it the rail's own toggle.
             // It comes back into the tree before it takes the focus.
@@ -2561,7 +2613,7 @@ ${A.settingsOverlay}[data-dshr-mode='phone'] {
        * a click that is not the user's is stopped by neither.
        */
       function standInForToggle(hidden) {
-        const toggle = document.querySelector(A.sidebarToggle)
+        const toggle = sidebarToggle()
         if (!(toggle instanceof HTMLElement)) return
         if (hidden) {
           // A hidden element that still holds the focus is a focus that
