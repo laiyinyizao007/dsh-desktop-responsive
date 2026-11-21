@@ -80,6 +80,47 @@ starts at `alpha` rather than `rc` because `alpha` sorts before `rc` on
 the same tuple, so one comparator admits both `0.2.2-alpha.*` and
 `0.2.2-rc.*`.
 
+### Opening it on a phone
+
+The plugin changes how the Harness web UI looks in a narrow window; it
+does not decide how a phone reaches that UI. That is the deployment's
+choice, and most of them need no domain at all:
+
+| Where the phone is | What to run | Domain |
+| --- | --- | --- |
+| Nowhere — a narrow desktop window | nothing more | no |
+| On the same Wi-Fi as the computer | `dsh --profile web --host 192.168.1.5` (the computer's LAN address), then open the URL it prints — `http://192.168.1.5:<port>/?token=…` | no |
+| On a Tailscale (or similar) network with the computer | `dsh --profile web --host 100.x.y.z` (the computer's tailnet address) | no |
+| Anywhere, through a tunnel or reverse proxy | `dsh --profile web --trusted-host your.host --public-url https://your.host/` behind the tunnel | yours, or a temporary `trycloudflare.com` one |
+
+Two things the Harness asks of every one of them:
+
+- **Bind one address, not all.** `--host 0.0.0.0` is refused; name the
+  interface. The address the UI is bound to is accepted as it is.
+- **Admit any other name.** Under a name that is neither loopback nor
+  the bound address — a domain, a tunnel's host, a MagicDNS name — the
+  page still loads, but every call it makes to the Harness is refused
+  with 403 until that name is passed with `--trusted-host`.
+
+The DSH Desktop runs its web UI on loopback only (`127.0.0.1`), so no
+phone reaches it directly, whatever the list says. It can be reached
+through a tunnel or reverse proxy running on the same computer; the name
+that proxy serves then goes in the `trustedHosts` of the
+`@deepseek-ai/dsh-client-connection` entry (id `connection`), set with a
+row in the profile's `cordis.patch.yml`. Without such a proxy, run the
+`web` profile bound to a LAN or tailnet address as in the table.
+
+The first visit has to carry the login: open the URL `dsh web` prints,
+with its `?token=`, once. The Harness swaps it for a cookie and the plain
+address works from then on. Open it in the phone's browser itself — typed,
+pasted, or through the browser's own QR scanner. A link opened from a chat
+app or a camera preview can land in a view that keeps no cookies, and the
+login is then lost on the very next request.
+
+The DSH Desktop's own phone page (the one behind its "connect phone" QR
+code) is a separate, fixed page that loads no plugins; this plugin
+applies to the full web UI only.
+
 ### Building the host from source
 
 A host that builds the upstream from source can apply the patches in

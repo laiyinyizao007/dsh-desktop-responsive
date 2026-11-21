@@ -615,6 +615,102 @@ describe('dsh-desktop-responsive client', () => {
     expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
   })
 
+  /**
+   * A host shaped like the DSH Desktop build: the sidebar root is marked,
+   * the toggle is not. The upstream's first row takes one of three shapes:
+   * `wide` — the brand (a button that starts a new session) then the
+   * toggle; `narrow` — the toggle alone; `darwin` — a strip holding the
+   * toggle alone, ahead of the brand's own row. `crowded` is a row the
+   * plugin does not know.
+   */
+  function unmarkedToggleHost(shape = 'wide') {
+    const built = buildFrame({ width: 390, collapsed: true })
+    const { sidebar, toggle } = built
+    sidebar.setAttribute('data-dsh-sidebar-root', '')
+    toggle.removeAttribute('data-dsh-region')
+    let brandClicks = 0
+    const brand = document.createElement('button')
+    brand.setAttribute('aria-label', 'New session')
+    brand.addEventListener('click', () => { brandClicks += 1 })
+    const row = document.createElement('div')
+    if (shape === 'wide') row.append(brand, toggle)
+    if (shape === 'narrow') row.append(toggle)
+    if (shape === 'crowded') row.append(brand, document.createElement('button'), toggle)
+    if (shape === 'darwin') {
+      row.append(toggle)
+      const logoRow = document.createElement('div')
+      logoRow.append(brand)
+      sidebar.prepend(logoRow)
+    }
+    sidebar.prepend(row)
+    sidebar.appendChild(document.createElement('button'))
+    return { ...built, brandClicks: () => brandClicks }
+  }
+
+  it('opens the drawer on a host whose toggle carries no marker', async () => {
+    // Without a way to the toggle the menu button does nothing, and on a
+    // phone the session list cannot be reached at all.
+    const { frame, toggles, brandClicks } = unmarkedToggleHost('wide')
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(toggles()).toBe(1)
+    expect(brandClicks()).toBe(0)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+  })
+
+  it('closes the drawer through the toggle, not the brand, on a host whose toggle carries no marker', async () => {
+    // While the sidebar is wide the brand button comes first in the row:
+    // closing the drawer must not start a new session.
+    const { frame, toggles, brandClicks } = unmarkedToggleHost('wide')
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flush()
+    expect(brandClicks()).toBe(0)
+    expect(toggles()).toBe(2)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('closed')
+  })
+
+  it('finds the toggle alone in its strip on a macOS-shaped host', async () => {
+    const { frame, toggles, brandClicks } = unmarkedToggleHost('darwin')
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(toggles()).toBe(1)
+    expect(brandClicks()).toBe(0)
+    expect(frame.getAttribute('data-dshr-drawer')).toBe('open')
+  })
+
+  it('hides the unmarked toggle while the plugin stands in, and gives it back on unload', async () => {
+    // The narrow row is the state the plugin spends most of its time in:
+    // the drawer is closed and the plugin's menu button stands in for the
+    // toggle. What it wrote on the upstream's button has to come off again.
+    const { toggle } = unmarkedToggleHost('narrow')
+    await flush()
+    expect(toggle.getAttribute('aria-hidden')).toBe('true')
+    expect(toggle.getAttribute('tabindex')).toBe('-1')
+    plugin.dispose()
+    expect(toggle.hasAttribute('aria-hidden')).toBe(false)
+    expect(toggle.hasAttribute('tabindex')).toBe(false)
+  })
+
+  it('clicks nothing in a sidebar row it does not know', async () => {
+    // A row with more buttons than the toggle and the brand could put
+    // anything last. Guessing could start a session; doing nothing and
+    // saying so cannot.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { toggles, brandClicks } = unmarkedToggleHost('crowded')
+    await flush()
+    document.querySelector('[data-dshr-menu]').click()
+    await flush()
+    expect(toggles()).toBe(0)
+    expect(brandClicks()).toBe(0)
+    expect(errors.mock.calls.some(([m]) => String(m).includes('first row holds 3 buttons'))).toBe(true)
+    errors.mockRestore()
+  })
+
   it('hides the menu button while the drawer is open', async () => {
     buildFrame({ width: 390, collapsed: true })
     await flush()

@@ -45,7 +45,7 @@ them, and the plugin's rules are written against exactly these names:
 | `[data-dsh-region="sidebar"]` | The sidebar's column | the plugin, at runtime |
 | `[data-dsh-region="center"]` | The centre column | the plugin, at runtime |
 | `[data-dsh-sidebar-root]` | The sidebar's own root | the host's build |
-| `[data-dsh-region="sidebar-toggle"]` | The button that opens the sidebar | the host's build |
+| `[data-dsh-region="sidebar-toggle"]` | The button that opens the sidebar | the host's build; optional — without it the plugin uses the last button of the root's first row |
 | `[data-dsh-region="conversation-header"]` | The conversation's header | `patches/` |
 | `[data-dsh-region="conversation-title-row"]` | The row the title sits in | `patches/` |
 | `[data-dsh-region="conversation-workspace-row"]` | The workspace row | `patches/` |
@@ -77,7 +77,9 @@ messages, and the eight parts of the settings dialog.
 Two of them the patches do not carry: `[data-dsh-sidebar-root]` and
 `[data-dsh-region="sidebar-toggle"]` belong to the sidebar package, which
 the patches do not touch. A host that builds the upstream from source has
-to add those itself, or the plugin will not find the frame.
+to add the first itself, or the plugin will not find the frame. The second
+is optional: without it the plugin takes the last button of the sidebar
+root's first row, which is where the upstream renders its toggle.
 
 The DSH Desktop's build adds the first of the two on its own: it patches
 the upstream's sidebar package to carry `data-dsh-sidebar-root`, so the
